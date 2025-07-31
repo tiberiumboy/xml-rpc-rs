@@ -1,16 +1,16 @@
-use super::error::Result;
+use super::error::{Result, ResultExt};
 use super::xmlfmt::{from_params, into_params, parse, Call, Fault, Params, Response};
 use serde::{Deserialize, Serialize};
 use std;
-use ureq::http::{Uri, Error};
 
 pub fn call_value<URL, Tkey>(uri: &URL, name: Tkey, params: Params) -> Result<Response>
 where
     URL: Clone,
-    Uri: TryFrom<URL>,
+    ureq::http::Uri: TryFrom<URL>,
+    <ureq::http::Uri as TryFrom<URL>>::Error: Into<ureq::http::Error>,
     Tkey: Into<String>,
 {
-    Client::new()?.call_value(uri, name, params)
+    Client::new()?.call_value::<URL, Tkey>(uri, name, params)
 }
 
 pub fn call<'a, URL, Tkey, Treq, Tres>(
@@ -20,7 +20,8 @@ pub fn call<'a, URL, Tkey, Treq, Tres>(
 ) -> Result<std::result::Result<Tres, Fault>>
 where
     URL: Clone,    
-    Uri: TryFrom<URL>,
+    ureq::http::Uri: TryFrom<URL>,
+    <ureq::http::Uri as TryFrom<URL>>::Error: Into<ureq::http::Error>,
     Tkey: Into<String>,
     Treq: Serialize,
     Tres: Deserialize<'a>,
@@ -39,13 +40,11 @@ impl Client {
     pub fn call_value<URL, Tkey>(&mut self, uri: &URL, name: Tkey, params: Params) -> Result<Response>
     where
         URL: Clone,
-        Uri: TryFrom<URL>,
-        <Uri as TryFrom<ureq::http::URL>>::Error: Into<ureq::http::Error>,
+        ureq::http::Uri: TryFrom<URL>,
+        <ureq::http::Uri as TryFrom<URL>>::Error: Into<ureq::http::Error>,
         Tkey: Into<String>,
     {
         use super::xmlfmt::value::ToXml;
-        
-        // create a new request and send it to the url path.
         let body = Call::new(name.into(), params).to_xml();
         let mut response = ureq::post(uri.clone())
             .header("Content-Type", "text/xml")
@@ -62,8 +61,8 @@ impl Client {
     ) -> Result<std::result::Result<Tres, Fault>>
     where
         URL: Clone,
-        Uri: TryFrom<URL>,
-        <Uri as TryFrom<URL>>::Error: Into<Error>,
+        ureq::http::Uri: TryFrom<URL>,
+        <ureq::http::Uri as TryFrom<URL>>::Error: Into<ureq::http::Error>,
         Tkey: Into<String>,
         Treq: Serialize,
         Tres: Deserialize<'a>,
