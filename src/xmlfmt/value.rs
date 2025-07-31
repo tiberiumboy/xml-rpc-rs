@@ -1,6 +1,6 @@
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde::de::Unexpected;
-use std;
+use std::result::Result;
 use std::collections::HashMap;
 use xml::escape::escape_str_pcdata;
 
@@ -42,6 +42,12 @@ pub struct Fault {
 }
 
 impl Fault {
+    pub fn empty() -> Self {
+        Self { code: 400, message: "".into() }
+    }
+}
+
+impl Fault {
     pub fn new<T>(code: i32, message: T) -> Fault
     where
         T: Into<String>,
@@ -53,12 +59,32 @@ impl Fault {
     }
 }
 
-pub type Response = std::result::Result<Params, Fault>;
+// this looks like a bad name convention...
+pub type Response = Result<Params, Fault>;
+
+pub struct XML;
+
+impl XML {
+    pub fn from_data<T: Into<Value>>(key: T, data: T ) -> Response {
+        let mut values = Vec::with_capacity(2);
+        values[0] = key.into();
+        values[1] = data.into();
+        Ok(values)
+    }
+} 
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Call {
     pub name: String,
     pub params: Params,
+}
+
+impl Call {
+    pub fn new<T>(name: T, params: Params ) -> Self
+    where T: Into<String> 
+    {
+        Self { name: name.into(), params }
+    }
 }
 
 pub trait ToXml {

@@ -32,25 +32,25 @@ fn main() {
     std::thread::sleep(Duration::from_secs(1));
 
     let t1 = std::thread::spawn(|| {
-        call::<_, _, ()>(&"http://127.0.0.1:5000".parse().unwrap(), "foo", ())
+        call::<_, _, _, ()>(&"http://127.0.0.1:5000".parse().unwrap(), "foo", ())
             .unwrap()
             .unwrap();
     });
 
     let t2 = std::thread::spawn(|| {
-        call::<_, _, ()>(&"http://127.0.0.1:5000".parse().unwrap(), "bar", ())
+        call::<_, _, _, ()>(&"http://127.0.0.1:5000".parse().unwrap(), "bar", ())
             .unwrap()
             .unwrap();
     });
 
     let t3 = std::thread::spawn(|| {
-        call::<_, _, ()>(&"http://127.0.0.1:5000".parse().unwrap(), "foo", ())
+        call::<_, _, _, ()>(&"http://127.0.0.1:5000".parse().unwrap(), "foo", ())
             .unwrap()
             .unwrap();
     });
 
     let t4 = std::thread::spawn(|| {
-        call::<_, _, ()>(&"http://127.0.0.1:5000".parse().unwrap(), "bar", ())
+        call::<_, _, _, ()>(&"http://127.0.0.1:5000".parse().unwrap(), "bar", ())
             .unwrap()
             .unwrap();
     });

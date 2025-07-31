@@ -1,26 +1,26 @@
-use super::error::{Result, ResultExt};
+use super::error::Result;
 use super::xmlfmt::{from_params, into_params, parse, Call, Fault, Params, Response};
-use hyper::{self, Client as HyperClient};
 use serde::{Deserialize, Serialize};
 use std;
-use Url;
+use ureq::http::{Uri, Error};
 
-use hyper::header::Headers;
-header! { (ContentType, "ContentType") => [String] }
-
-pub fn call_value<Tkey>(uri: &Url, name: Tkey, params: Params) -> Result<Response>
+pub fn call_value<URL, Tkey>(uri: &URL, name: Tkey, params: Params) -> Result<Response>
 where
+    URL: Clone,
+    Uri: TryFrom<URL>,
     Tkey: Into<String>,
 {
     Client::new()?.call_value(uri, name, params)
 }
 
-pub fn call<'a, Tkey, Treq, Tres>(
-    uri: &Url,
+pub fn call<'a, URL, Tkey, Treq, Tres>(
+    uri: &URL,
     name: Tkey,
     req: Treq,
 ) -> Result<std::result::Result<Tres, Fault>>
 where
+    URL: Clone,    
+    Uri: TryFrom<URL>,
     Tkey: Into<String>,
     Treq: Serialize,
     Tres: Deserialize<'a>,
@@ -28,50 +28,42 @@ where
     Client::new()?.call(uri, name, req)
 }
 
-pub struct Client {
-    client: HyperClient,
-}
+pub struct Client;
 
 impl Client {
+
     pub fn new() -> Result<Client> {
-        let client = HyperClient::new();
-        Ok(Client { client })
+        Ok(Client {})
     }
 
-    pub fn call_value<Tkey>(&mut self, uri: &Url, name: Tkey, params: Params) -> Result<Response>
+    pub fn call_value<URL, Tkey>(&mut self, uri: &URL, name: Tkey, params: Params) -> Result<Response>
     where
+        URL: Clone,
+        Uri: TryFrom<URL>,
+        <Uri as TryFrom<ureq::http::URL>>::Error: Into<ureq::http::Error>,
         Tkey: Into<String>,
     {
         use super::xmlfmt::value::ToXml;
-        let body_str = Call {
-            name: name.into(),
-            params,
-        }
-        .to_xml();
-        let bytes: &[u8] = body_str.as_bytes();
-        let body = hyper::client::Body::BufBody(bytes, bytes.len());
-
-        let mut headers = Headers::new();
-        headers.set(ContentType("xml".to_owned()));
-
-        let response = self
-            .client
-            .post(uri.as_ref())
-            .headers(headers)
-            .body(body)
-            .send()
-            .chain_err(|| "Failed to run the HTTP request within hyper.")?;
-
-        parse::response(response).map_err(Into::into)
+        
+        // create a new request and send it to the url path.
+        let body = Call::new(name.into(), params).to_xml();
+        let mut response = ureq::post(uri.clone())
+            .header("Content-Type", "text/xml")
+            .send(body)
+            .chain_err(|| "Failed to run the HTTP request within ureq.")?;
+        parse::response(response.body_mut().as_reader()).map_err(Into::into)
     }
 
-    pub fn call<'a, Tkey, Treq, Tres>(
+    pub fn call<'a, URL, Tkey, Treq, Tres>(
         &mut self,
-        uri: &Url,
+        uri: &URL,
         name: Tkey,
         req: Treq,
     ) -> Result<std::result::Result<Tres, Fault>>
     where
+        URL: Clone,
+        Uri: TryFrom<URL>,
+        <Uri as TryFrom<URL>>::Error: Into<Error>,
         Tkey: Into<String>,
         Treq: Serialize,
         Tres: Deserialize<'a>,

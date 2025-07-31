@@ -39,7 +39,7 @@ pub fn main() {
         bar: "baz".into(),
     };
     println!("Sending: {:?}", req);
-    let uri = "http://localhost:8080/".parse().unwrap();
+    let uri = "http://localhost:8080/";
     let res: Result<Result<TestStruct, _>, _> = client.call(&uri, "echo", req.clone());
     println!("Echo Received: {:?}", res);
     let res: Result<Result<TestStruct, _>, _> = client.call(&uri, "double", req.clone());

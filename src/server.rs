@@ -1,7 +1,8 @@
-use rouille;
 use serde::{Deserialize, Serialize};
 use std;
 use std::collections::HashMap;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener};
+use crate::xmlfmt::value::XML;  
 
 use super::error::{ErrorKind, Result};
 use super::xmlfmt::{error, from_params, into_params, parse, Call, Fault, Response, Value};
@@ -30,20 +31,32 @@ fn on_missing_method(_: Vec<Value>) -> Response {
 pub struct Server {
     handlers: HandlerMap,
     on_missing_method: Handler,
-}
-
-impl Default for Server {
-    fn default() -> Self {
-        Server {
-            handlers: HashMap::new(),
-            on_missing_method: Box::new(on_missing_method),
-        }
-    }
+    listener: TcpListener,
+    address: SocketAddr,
 }
 
 impl Server {
-    pub fn new() -> Server {
-        Server::default()
+    pub fn new(port: u16) -> Server {
+        let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
+        let listener = TcpListener::bind(addr).expect("Unable to start listener!");
+        Self {
+            handlers: HashMap::new(),
+            on_missing_method: Box::new(on_missing_method),
+            listener,
+            address: addr
+        }
+    }
+
+    pub fn run(&self) {
+        todo!("Somehow this was missing?");
+    }
+
+    pub fn poll(&self) {
+        todo!("somehow this was missing?");
+    }
+
+    pub fn server_addr(&self) -> &SocketAddr {
+        &self.address
     }
 
     pub fn register_value<K, T>(&mut self, name: K, handler: T)
@@ -95,32 +108,49 @@ impl Server {
         self.on_missing_method = Box::new(handler);
     }
 
-    pub fn bind(
+    // todo - what is this suppose to do?
+    pub fn bind<T: Into<SocketAddr>>(
         self,
-        uri: &std::net::SocketAddr,
-    ) -> Result<BoundServer<impl Fn(&rouille::Request) -> rouille::Response + Send + Sync + 'static>>
+        _uri: T,
+    ) -> Result<Server>
     {
-        rouille::Server::new(uri, move |req| self.handle_outer(req))
-            .map_err(|err| ErrorKind::BindFail(err.to_string()).into())
-            .map(BoundServer::new)
+        // Trying to fix this plugin so blender doesn't have any compile time issue in the future updates.
+        // three crates were marked depreciated and may stop build unless author of xml-rpc-rs can maintain their crate again.
+        // I re-did some code here to use different library while maintaining similar API calls.
+        // self.listener.incoming()
+        // let sock: SocketAddr = uri.into();
+        // let port = sock.port();
+        // Server::new(port)
+
+            // .map_err(|err| ErrorKind::BindFail(err.to_string()).into())
+            // .map(BoundServer::new)
+            // this function expects Ok(BoundServer)
+        Ok(self)
     }
 
-    fn handle_outer(&self, request: &rouille::Request) -> rouille::Response {
+    fn handle_outer(&self, request: &Request) -> Response {
         use super::xmlfmt::value::ToXml;
 
-        let body = match request.data() {
-            Some(data) => data,
-            None => return rouille::Response::empty_400(),
-        };
+        // get the content of the body
+        let body = match request.body() {
+            Some(data) => data.as_bytes().ok_or(Fault::empty()),
+            // TODO: Check and see if reqwest does have a basic 400 default response types
+            None => return Err(Fault::empty()),
+        }?;
 
-        // TODO: use the right error type
+        // parse the body into xml call
         let call: Call = match parse::call(body) {
             Ok(data) => data,
-            Err(_err) => return rouille::Response::empty_400(),
+            // TODO: Check and see if reqwest does have a basic 400 default response types
+            Err(_err) => return Err(Fault::empty()),
         };
+
+        // handle the xml callback
         let res = self.handle(call);
         let body = res.to_xml();
-        rouille::Response::from_data("text/xml", body)
+
+        // TODO: replace with reqwest appropriate response
+        XML::from_data(Value::String("text/xml".into()), Value::String(body))
     }
 
     fn handle(&self, req: Call) -> Response {
@@ -130,23 +160,20 @@ impl Server {
     }
 }
 
-pub struct BoundServer<F>
-where
-    F: Send + Sync + 'static + Fn(&rouille::Request) -> rouille::Response,
+// I'm a bit confused why we need this generic to be async safe (send + sync + 'static) 
+// but with a fn call that takes in request and returns Response
+pub struct BoundServer
 {
-    server: rouille::Server<F>,
-    // server: hyper::Server<NewService, hyper::Body>,
+    server: Server,
 }
 
-impl<F> BoundServer<F>
-where
-    F: Send + Sync + 'static + Fn(&rouille::Request) -> rouille::Response,
+impl BoundServer
 {
-    fn new(server: rouille::Server<F>) -> Self {
+    fn new(server: Server) -> Self {
         Self { server }
     }
 
-    pub fn local_addr(&self) -> std::net::SocketAddr {
+    pub fn local_addr(&self) -> &SocketAddr {
         self.server.server_addr()
     }
 
