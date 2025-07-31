@@ -300,32 +300,20 @@ impl Request {
 pub struct Server {
     handlers: HandlerMap,
     on_missing_method: Handler,
-    listener: TcpListener,
-    address: SocketAddr,
+}
+
+impl Default for Server {
+    fn default() -> Self {
+        Server {
+            handlers: HashMap::new(),
+            on_missing_method: Box::new(on_missing_method),
+        }
+    }
 }
 
 impl Server {
-    pub fn new(port: u16) -> Server {
-        let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
-        let listener = TcpListener::bind(addr).expect("Unable to start listener!");
-        Self {
-            handlers: HashMap::new(),
-            on_missing_method: Box::new(on_missing_method),
-            listener,
-            address: addr
-        }
-    }
-
-    pub fn run(&self) {
-        todo!("Somehow this was missing?");
-    }
-
-    pub fn poll(&self) {
-        todo!("somehow this was missing?");
-    }
-
-    pub fn server_addr(&self) -> &SocketAddr {
-        &self.address
+    pub fn new() -> Server {
+        Server::default()
     }
 
     pub fn register_value<K, T>(&mut self, name: K, handler: T)
@@ -378,19 +366,18 @@ impl Server {
     }
 
     // todo - what is this suppose to do?
-    pub fn bind<T: Into<SocketAddr>>(
+    pub fn bind(
         self,
-        _uri: T,
+        _uri: &std::net::SocketAddr,
     ) -> Result<Server>
     {
         // Trying to fix this plugin so blender doesn't have any compile time issue in the future updates.
         // three crates were marked depreciated and may stop build unless author of xml-rpc-rs can maintain their crate again.
         // I re-did some code here to use different library while maintaining similar API calls.
-        // self.listener.incoming()
-        // let sock: SocketAddr = uri.into();
+        // self.listener.incoming();
+        // let _sock: SocketAddr = uri.into();
         // let port = sock.port();
         // Server::new(port)
-
             // .map_err(|err| ErrorKind::BindFail(err.to_string()).into())
             // .map(BoundServer::new)
             // this function expects Ok(BoundServer)
@@ -403,16 +390,14 @@ impl Server {
         use super::xmlfmt::value::ToXml;
 
         // get the content of the body
-        let body = match request.data {
-            Some(data) => data.as_bytes().ok_or(Fault::empty()),
-            // TODO: Check and see if reqwest does have a basic 400 default response types
+        let body = match request.data() {
+            Some(data) => data,
             None => return Err(Fault::empty()),
-        }?;
+        };
 
         // parse the body into xml call
         let call: Call = match parse::call(body) {
             Ok(data) => data,
-            // TODO: Check and see if reqwest does have a basic 400 default response types
             Err(_err) => return Err(Fault::empty()),
         };
 
@@ -431,16 +416,20 @@ impl Server {
     }
 }
 
-// I'm a bit confused why we need this generic to be async safe (send + sync + 'static) 
 // but with a fn call that takes in request and returns Response
-pub struct BoundServer
+// server struct used here was from rouille lib. TODO: Finish impl rouille lib
+pub struct BoundServer<F>
+where 
+    F: Send + Sync + 'static + Fn(&Request) -> Response,
 {
-    server: Server,
+    server: Server<F>,
 }
 
-impl BoundServer
+impl<F> BoundServer<F>
+where
+    F: Send + Sync + 'static + Fn(&Request) -> Response,
 {
-    fn new(server: Server) -> Self {
+    fn new(server: Server<F>) -> Self {
         Self { server }
     }
 
