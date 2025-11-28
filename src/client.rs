@@ -1,9 +1,10 @@
-use super::error::{Result, ResultExt};
+// use super::error::{Result, ResultExt};
 use super::xmlfmt::{from_params, into_params, parse, Call, Fault, Params, Response};
+use super::xmlfmt::error::XmlError;
 use serde::{Deserialize, Serialize};
 use std;
 
-pub fn call_value<URL, Tkey>(uri: &URL, name: Tkey, params: Params) -> Result<Response>
+pub fn call_value<URL, Tkey>(uri: &URL, name: Tkey, params: Params) -> Result<Response, XmlError>
 where
     URL: Clone,
     ureq::http::Uri: TryFrom<URL>,
@@ -17,7 +18,7 @@ pub fn call<'a, URL, Tkey, Treq, Tres>(
     uri: &URL,
     name: Tkey,
     req: Treq,
-) -> Result<std::result::Result<Tres, Fault>>
+) -> Result<std::result::Result<Tres, Fault>, XmlError>
 where
     URL: Clone,    
     ureq::http::Uri: TryFrom<URL>,
@@ -33,11 +34,11 @@ pub struct Client;
 
 impl Client {
 
-    pub fn new() -> Result<Client> {
+    pub fn new() -> Result<Client, XmlError> {
         Ok(Client {})
     }
 
-    pub fn call_value<URL, Tkey>(&mut self, uri: &URL, name: Tkey, params: Params) -> Result<Response>
+    pub fn call_value<URL, Tkey>(&mut self, uri: &URL, name: Tkey, params: Params) -> Result<Response, XmlError>
     where
         URL: Clone,
         ureq::http::Uri: TryFrom<URL>,
@@ -49,8 +50,10 @@ impl Client {
         let mut response = ureq::post(uri.clone())
             .header("Content-Type", "text/xml")
             .send(body)
-            .chain_err(|| "Failed to run the HTTP request within ureq.")?;
-        parse::response(response.body_mut().as_reader()).map_err(Into::into)
+            .map_err(|e| XmlError::Http(e.to_string()))?;
+
+        let content = response.body_mut().as_reader();
+        parse::response(content)
     }
 
     pub fn call<'a, URL, Tkey, Treq, Tres>(
@@ -58,7 +61,7 @@ impl Client {
         uri: &URL,
         name: Tkey,
         req: Treq,
-    ) -> Result<std::result::Result<Tres, Fault>>
+    ) -> Result<std::result::Result<Tres, Fault>, XmlError>
     where
         URL: Clone,
         ureq::http::Uri: TryFrom<URL>,

@@ -17,14 +17,14 @@ pub enum Value {
 }
 
 impl Value {
-    pub fn unexpected(&self) -> Unexpected {
-        match *self {
-            Value::Int(v) => Unexpected::Signed(i64::from(v)),
-            Value::Bool(v) => Unexpected::Bool(v),
-            Value::String(ref v) => Unexpected::Str(v),
-            Value::Double(v) => Unexpected::Float(v),
+    pub fn unexpected(&'_ self) -> Unexpected<'_> {
+        match self {
+            Value::Int(v) => Unexpected::Signed(i64::from(*v)),
+            Value::Bool(v) => Unexpected::Bool(*v),
+            Value::String(v) => Unexpected::Str(v),
+            Value::Double(v) => Unexpected::Float(*v),
             Value::DateTime(_) => Unexpected::Other("dateTime.iso8601"),
-            Value::Base64(ref v) => Unexpected::Bytes(v),
+            Value::Base64(v) => Unexpected::Bytes(v),
             Value::Array(_) => Unexpected::Seq,
             Value::Struct(_) => Unexpected::Map,
         }

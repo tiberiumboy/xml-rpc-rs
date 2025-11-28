@@ -1,5 +1,5 @@
-use super::error::{Error, Result};
 use super::Value;
+use super::error::{Result, XmlError};
 use serde::de::{
     DeserializeSeed, EnumAccess, MapAccess, SeqAccess, Unexpected, VariantAccess, Visitor,
 };
@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::vec;
 
 impl<'de> serde::Deserializer<'de> for Value {
-    type Error = Error;
+    type Error = XmlError;
 
     #[inline]
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value>
@@ -381,7 +381,7 @@ impl SeqDeserializer {
 }
 
 impl<'de> serde::Deserializer<'de> for SeqDeserializer {
-    type Error = Error;
+    type Error = XmlError;
 
     #[inline]
     fn deserialize_any<V>(mut self, visitor: V) -> Result<V::Value>
@@ -409,7 +409,7 @@ impl<'de> serde::Deserializer<'de> for SeqDeserializer {
 }
 
 impl<'de> SeqAccess<'de> for SeqDeserializer {
-    type Error = Error;
+    type Error = XmlError;
 
     fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>>
     where
@@ -444,7 +444,7 @@ impl MapDeserializer {
 }
 
 impl<'de> MapAccess<'de> for MapDeserializer {
-    type Error = Error;
+    type Error = XmlError;
 
     fn next_key_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>>
     where
@@ -478,7 +478,7 @@ impl<'de> MapAccess<'de> for MapDeserializer {
 }
 
 impl<'de> serde::Deserializer<'de> for MapDeserializer {
-    type Error = Error;
+    type Error = XmlError;
 
     #[inline]
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value>
@@ -501,7 +501,7 @@ struct EnumDeserializer {
 }
 
 impl<'de> EnumAccess<'de> for EnumDeserializer {
-    type Error = Error;
+    type Error = XmlError;
     type Variant = Value;
 
     fn variant_seed<V>(self, seed: V) -> Result<(V::Value, Value)>
@@ -515,7 +515,7 @@ impl<'de> EnumAccess<'de> for EnumDeserializer {
 }
 
 impl<'de> VariantAccess<'de> for Value {
-    type Error = Error;
+    type Error = XmlError;
 
     fn unit_variant(self) -> Result<()> {
         if let Value::Struct(v) = self {

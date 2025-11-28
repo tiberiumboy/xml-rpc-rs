@@ -1,4 +1,4 @@
-use super::error::{Error, ErrorKind};
+use super::error::{XmlError, FmtError};
 use super::Value;
 use serde::{self, Serialize};
 use std::collections::HashMap;
@@ -7,7 +7,7 @@ pub struct Serializer;
 
 impl serde::Serializer for Serializer {
     type Ok = Value;
-    type Error = Error;
+    type Error = XmlError;
 
     type SerializeSeq = SerializeVec;
     type SerializeTuple = SerializeVec;
@@ -192,7 +192,7 @@ impl serde::Serializer for Serializer {
     }
 }
 
-fn to_value<T>(value: &T) -> Result<Value, Error>
+fn to_value<T>(value: &T) -> Result<Value, XmlError>
 where
     T: Serialize,
 {
@@ -207,9 +207,9 @@ pub struct SerializeVec {
 
 impl serde::ser::SerializeSeq for SerializeVec {
     type Ok = Value;
-    type Error = Error;
+    type Error = XmlError;
 
-    fn serialize_element<T>(&mut self, value: &T) -> Result<(), Error>
+    fn serialize_element<T>(&mut self, value: &T) -> Result<(), XmlError>
     where
         T: Serialize + ?Sized,
     {
@@ -217,7 +217,7 @@ impl serde::ser::SerializeSeq for SerializeVec {
         Ok(())
     }
 
-    fn end(self) -> Result<Value, Error> {
+    fn end(self) -> Result<Value, XmlError> {
         let content = Value::Array(self.vec);
         Ok(match self.variant {
             Some(variant) => {
@@ -232,48 +232,48 @@ impl serde::ser::SerializeSeq for SerializeVec {
 
 impl serde::ser::SerializeTuple for SerializeVec {
     type Ok = Value;
-    type Error = Error;
+    type Error = XmlError;
 
-    fn serialize_element<T>(&mut self, value: &T) -> Result<(), Error>
+    fn serialize_element<T>(&mut self, value: &T) -> Result<(), XmlError>
     where
         T: Serialize + ?Sized,
     {
         serde::ser::SerializeSeq::serialize_element(self, value)
     }
 
-    fn end(self) -> Result<Value, Error> {
+    fn end(self) -> Result<Value, XmlError> {
         serde::ser::SerializeSeq::end(self)
     }
 }
 
 impl serde::ser::SerializeTupleStruct for SerializeVec {
     type Ok = Value;
-    type Error = Error;
+    type Error = XmlError;
 
-    fn serialize_field<T>(&mut self, value: &T) -> Result<(), Error>
+    fn serialize_field<T>(&mut self, value: &T) -> Result<(), XmlError>
     where
         T: Serialize + ?Sized,
     {
         serde::ser::SerializeSeq::serialize_element(self, value)
     }
 
-    fn end(self) -> Result<Value, Error> {
+    fn end(self) -> Result<Value, XmlError> {
         serde::ser::SerializeSeq::end(self)
     }
 }
 
 impl serde::ser::SerializeTupleVariant for SerializeVec {
     type Ok = Value;
-    type Error = Error;
+    type Error = XmlError;
 
-    fn serialize_field<T>(&mut self, value: &T) -> Result<(), Error>
+    fn serialize_field<T>(&mut self, value: &T) -> Result<(), XmlError>
     where
         T: Serialize + ?Sized,
     {
         serde::ser::SerializeSeq::serialize_element(self, value)
     }
 
-    fn end(self) -> Result<Value, Error> {
+    fn end(self) -> Result<Value, XmlError> {
         serde::ser::SerializeSeq::end(self)
     }
 }
@@ -287,9 +287,9 @@ pub struct SerializeMap {
 
 impl serde::ser::SerializeMap for SerializeMap {
     type Ok = Value;
-    type Error = Error;
+    type Error = XmlError;
 
-    fn serialize_key<T>(&mut self, key: &T) -> Result<(), Error>
+    fn serialize_key<T>(&mut self, key: &T) -> Result<(), XmlError>
     where
         T: Serialize + ?Sized,
     {
@@ -298,14 +298,14 @@ impl serde::ser::SerializeMap for SerializeMap {
             Value::Int(v) => self.next_key = Some(v.to_string()),
             Value::Double(v) => self.next_key = Some(v.to_string()),
             Value::String(s) => self.next_key = Some(s),
-            _ => bail!(ErrorKind::UnsupportedData(
+            _ => Err(XmlError::Format(FmtError::UnsupportedFormat(
                 "Key must be a bool, int, float, char or string.".into(),
-            )),
+            )))?,
         };
         Ok(())
     }
 
-    fn serialize_value<T>(&mut self, value: &T) -> Result<(), Error>
+    fn serialize_value<T>(&mut self, value: &T) -> Result<(), XmlError>
     where
         T: Serialize + ?Sized,
     {
@@ -317,7 +317,7 @@ impl serde::ser::SerializeMap for SerializeMap {
         Ok(())
     }
 
-    fn end(self) -> Result<Value, Error> {
+    fn end(self) -> Result<Value, XmlError> {
         let content = Value::Struct(self.map);
         Ok(match self.variant {
             Some(variant) => {
@@ -332,9 +332,9 @@ impl serde::ser::SerializeMap for SerializeMap {
 
 impl serde::ser::SerializeStruct for SerializeMap {
     type Ok = Value;
-    type Error = Error;
+    type Error = XmlError;
 
-    fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<(), Error>
+    fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<(), XmlError>
     where
         T: Serialize + ?Sized,
     {
@@ -342,16 +342,16 @@ impl serde::ser::SerializeStruct for SerializeMap {
         serde::ser::SerializeMap::serialize_value(self, value)
     }
 
-    fn end(self) -> Result<Value, Error> {
+    fn end(self) -> Result<Value, XmlError> {
         serde::ser::SerializeMap::end(self)
     }
 }
 
 impl serde::ser::SerializeStructVariant for SerializeMap {
     type Ok = Value;
-    type Error = Error;
+    type Error = XmlError;
 
-    fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<(), Error>
+    fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<(), XmlError>
     where
         T: Serialize + ?Sized,
     {
@@ -359,7 +359,7 @@ impl serde::ser::SerializeStructVariant for SerializeMap {
         serde::ser::SerializeMap::serialize_value(self, value)
     }
 
-    fn end(self) -> Result<Value, Error> {
+    fn end(self) -> Result<Value, XmlError> {
         serde::ser::SerializeMap::end(self)
     }
 }

@@ -1,4 +1,6 @@
-use super::error::{Result, ResultExt};
+use crate::xmlfmt::error::FmtError;
+
+use super::error::{XmlError, Result};
 use super::{Call, Fault, Response, Value};
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use regex::Regex;
@@ -21,31 +23,31 @@ fn wrap_in_string(content: String) -> String {
     .into()
 }
 
-#[allow(dead_code)]
+// TODO: Write unit test for this function
 pub fn xml<T: std::io::Read>(mut r: T) -> Result<Value> {
     let mut content = String::new();
     r.read_to_string(&mut content)
-        .chain_err(|| "Failed to read data source.")?;
+        .map_err(|e| XmlError::Format(FmtError::Decoding(format!("Failed to read data source.{:?}", e))))?;
     let data: XmlValue = serde_xml_rs::from_str(&wrap_in_string(content))
-        .chain_err(|| "Failed to parse XML-RPC data.")?;
+        .map_err(|e| XmlError::Format(FmtError::Decoding(format!("Failed to parse XML-RPC data.{:?}", e))))?;
     data.into()
 }
 
 pub fn call<T: std::io::Read>(mut r: T) -> Result<Call> {
     let mut content = String::new();
     r.read_to_string(&mut content)
-        .chain_err(|| "Failed to read data source.")?;
+        .map_err(|e| XmlError::Format(FmtError::Decoding(format!("Failed to read data source.{:?}", e))))?;
     let data: XmlCall = serde_xml_rs::from_str(&wrap_in_string(content))
-        .chain_err(|| "Failed to parse XML-RPC call.")?;
+        .map_err(|e| XmlError::Format(FmtError::Decoding(format!("Failed to parse XML-RPC call.{:?}", e))))?;
     data.into()
 }
 
 pub fn response<T: std::io::Read>(mut r: T) -> Result<Response> {
     let mut content = String::new();
     r.read_to_string(&mut content)
-        .chain_err(|| "Failed to read data source.")?;
+        .map_err(|e| XmlError::Format(FmtError::Decoding(format!("Failed to read data source.{:?}", e))))?;
     let data: XmlResponse = serde_xml_rs::from_str(&wrap_in_string(content))
-        .chain_err(|| "Failed to parse XML-RPC response.")?;
+        .map_err(|e| XmlError::Format(FmtError::Decoding(format!("Failed to parse XML-RPC response.{:?}", e))))?;
     data.into()
 }
 
@@ -77,12 +79,12 @@ impl From<XmlValue> for Result<Value> {
             XmlValue::I4(v) | XmlValue::Int(v) => Value::Int(v),
             XmlValue::Bool(v) => Value::Bool(v != 0),
             XmlValue::Str(v) => Value::String(v),
-            XmlValue::Double(v) => Value::Double(v.parse().chain_err(|| "Failed to parse double")?),
+            XmlValue::Double(v) => Value::Double(v.parse().map_err(|e| XmlError::Format(FmtError::Decoding(format!("Failed to parse double: {:?}", e))))?),
             XmlValue::DateTime(v) => Value::DateTime(v),
             XmlValue::Base64(v) => Value::Base64(
                 STANDARD
                     .decode(v.as_bytes())
-                    .chain_err(|| "Failed to parse base64")?,
+                    .map_err(|e| XmlError::Format(FmtError::Decoding(format!("Failed to parse base64: {:?}", e))))?,
             ),
             XmlValue::Array(v) => {
                 let items: Result<Vec<Value>> = v.into();
@@ -135,7 +137,7 @@ impl From<XmlResponseResult> for Result<Response> {
                 let val: Result<Value> = v.into();
 
                 Ok(Err(
-                    Fault::deserialize(val?).chain_err(|| "Failed to decode fault structure")?
+                    Fault::deserialize(val?).map_err(|e| XmlError::Format(FmtError::Decoding(format!("Failed to decode fault structure: {}", e))))?
                 ))
             }
         }
@@ -236,3 +238,18 @@ impl From<XmlStructItem> for Result<(String, Value)> {
         Ok((val.name, value?))
     }
 }
+
+/*
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_xml_function() {
+        let str = "<value><i4>42</i4></value>".as_bytes();
+        let data = xml(str);
+        dbg!(&data);
+        assert!(data.is_ok_and(|v| { v == Value::Int(42)}));
+    }
+}
+*/

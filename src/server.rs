@@ -1,28 +1,30 @@
 use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
+use std::panic::AssertUnwindSafe;
 use std::slice::Iter as SliceIter;
 use std::fmt;
 use std::io::Read;
 use std::io::Result as IoResult;
 use std::collections::HashMap;
+#[allow(unused_imports)]
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener};
+use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex};
 use crate::xmlfmt::value::XML;  
 
-use super::error::Result;
-use super::xmlfmt::{error, from_params, into_params, parse, Call, Fault, Response, Value};
+use super::xmlfmt::{error::{XmlError, Result}, from_params, into_params, parse, Call, Fault, Response, Value};
 
 type Handler = Box<dyn Fn(Vec<Value>) -> Response + Send + Sync>;
 type HandlerMap = HashMap<String, Handler>;
 
-pub fn on_decode_fail(err: &error::Error) -> Response {
+pub fn on_decode_fail(err: &XmlError) -> Response {
     Err(Fault::new(
         400,
         format!("Failed to decode request: {}", err),
     ))
 }
 
-pub fn on_encode_fail(err: &error::Error) -> Response {
+pub fn on_encode_fail(err: &XmlError) -> Response {
     Err(Fault::new(
         500,
         format!("Failed to encode response: {}", err),
@@ -269,7 +271,7 @@ impl Request {
     ///     }
     /// }
     /// ```
-    pub fn data(&self) -> Option<RequestBody> {
+    pub fn data(&'_ self) -> Option<RequestBody<'_>> {
         let reader = self.data.lock().unwrap().take();
         reader.map(|r| RequestBody {
             body: r,
@@ -296,25 +298,23 @@ impl Request {
     }
 }
 
+enum Executor {
+    Threaded { count: Arc<AtomicUsize> },
+    Pooled { pool: threadpool::ThreadPool },
+}
 
-pub struct Server {
+pub struct Server<F> {
+    server: tiny_http::Server,
+    handler: Arc<AssertUnwindSafe<F>>,
+    executor: Executor,
     handlers: HandlerMap,
     on_missing_method: Handler,
 }
 
-impl Default for Server {
-    fn default() -> Self {
-        Server {
-            handlers: HashMap::new(),
-            on_missing_method: Box::new(on_missing_method),
-        }
-    }
-}
-
-impl Server {
-    pub fn new() -> Server {
-        Server::default()
-    }
+impl<F> Server<F> {
+    // pub fn new() -> Server {
+    //     Server::default()
+    // }
 
     pub fn register_value<K, T>(&mut self, name: K, handler: T)
     where
@@ -335,8 +335,8 @@ impl Server {
         Treq: Deserialize<'a>,
         Tres: Serialize,
         Thandler: Fn(Treq) -> std::result::Result<Tres, Fault> + Send + Sync + 'static,
-        Tef: Fn(&error::Error) -> Response + Send + Sync + 'static,
-        Tdf: Fn(&error::Error) -> Response + Send + Sync + 'static,
+        Tef: Fn(&XmlError) -> Response + Send + Sync + 'static,
+        Tdf: Fn(&XmlError) -> Response + Send + Sync + 'static,
     {
         self.register_value(name, move |req| {
             let params = match from_params(req) {
@@ -369,7 +369,7 @@ impl Server {
     pub fn bind(
         self,
         _uri: &std::net::SocketAddr,
-    ) -> Result<Server>
+    ) -> Result<Server<F>>
     {
         // Trying to fix this plugin so blender doesn't have any compile time issue in the future updates.
         // three crates were marked depreciated and may stop build unless author of xml-rpc-rs can maintain their crate again.
@@ -418,30 +418,31 @@ impl Server {
 
 // but with a fn call that takes in request and returns Response
 // server struct used here was from rouille lib. TODO: Finish impl rouille lib
-pub struct BoundServer<F>
-where 
-    F: Send + Sync + 'static + Fn(&Request) -> Response,
-{
-    server: Server<F>,
-}
+// Do I need this and just rely on tiny_http?
+// pub struct BoundServer<F>
+// where 
+//     F: Send + Sync + 'static + Fn(&Request) -> Response
+// {
+//     server: Server<F>,
+// }
 
-impl<F> BoundServer<F>
-where
-    F: Send + Sync + 'static + Fn(&Request) -> Response,
-{
-    fn new(server: Server<F>) -> Self {
-        Self { server }
-    }
+// impl<F> BoundServer<F>
+// where 
+//     F: Send + Sync + 'static + Fn(&Request) -> Response
+// {
+//     fn new(server: Server<F>) -> Self {
+//         Self { server }
+//     }
 
-    pub fn local_addr(&self) -> &SocketAddr {
-        self.server.server_addr()
-    }
+//     pub fn local_addr(&self) -> &SocketAddr {
+//         self.server.server_addr()
+//     }
 
-    pub fn run(self) {
-        self.server.run()
-    }
+//     pub fn run(self) {
+//         self.server.run()
+//     }
 
-    pub fn poll(&self) {
-        self.server.poll()
-    }
-}
+//     pub fn poll(&self) {
+//         self.server.poll()
+//     }
+// }
