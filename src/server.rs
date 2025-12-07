@@ -1,37 +1,39 @@
+use crate::xmlfmt::error::{Result, XmlError};
+use crate::xmlfmt::fault::Fault;
+use crate::xmlfmt::to_xml::ToXml;
+use crate::xmlfmt::{Call, Value, XmlResult, from_params, into_params, parse};
 use serde::{Deserialize, Serialize};
-use std::marker::PhantomData;
-use std::panic::AssertUnwindSafe;
-use std::slice::Iter as SliceIter;
-use std::fmt;
+use std::collections::HashMap;
 use std::io::Read;
 use std::io::Result as IoResult;
-use std::collections::HashMap;
-#[allow(unused_imports)]
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener};
-use std::sync::atomic::AtomicUsize;
-use std::sync::{Arc, Mutex};
-use crate::xmlfmt::value::XML;  
+use std::marker::PhantomData;
+use std::net::SocketAddrV4;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::slice::Iter as SliceIter;
+use tiny_http::{Request, Response, Server as TinyHttpServer};
 
-use super::xmlfmt::{error::{XmlError, Result}, from_params, into_params, parse, Call, Fault, Response, Value};
-
-type Handler = Box<dyn Fn(Vec<Value>) -> Response + Send + Sync>;
+// I need to provide a response back. - See if we can do this without async/mutex
+// TODO: Do we need send + Sync? Is async ideal? Thread safe? Mutex?
+type Handler = Box<dyn Fn(Vec<Value>) -> XmlResult + Send + Sync + 'static>;
 type HandlerMap = HashMap<String, Handler>;
 
-pub fn on_decode_fail(err: &XmlError) -> Response {
+pub fn on_decode_fail(err: &XmlError) -> XmlResult {
     Err(Fault::new(
         400,
         format!("Failed to decode request: {}", err),
     ))
 }
 
-pub fn on_encode_fail(err: &XmlError) -> Response {
+pub fn on_encode_fail(err: &XmlError) -> XmlResult {
     Err(Fault::new(
         500,
         format!("Failed to encode response: {}", err),
     ))
 }
 
-fn on_missing_method(_: Vec<Value>) -> Response {
+// FIXME: May not be in used?
+#[allow(dead_code)]
+fn on_missing_method(_: Vec<Value>) -> XmlResult {
     Err(Fault::new(404, "Requested method does not exist"))
 }
 
@@ -55,7 +57,6 @@ impl<'a> Iterator for HeadersIter<'a> {
     }
 }
 
-
 /// Gives access to the body of a request.
 ///
 /// In order to obtain this object, call `request.data()`.
@@ -71,6 +72,7 @@ impl<'a> Read for RequestBody<'a> {
     }
 }
 
+/*
 /// Represents a request that your handler must answer to.
 ///
 /// This can be either a real request (received by the HTTP server) or a mock object created with
@@ -96,6 +98,7 @@ impl fmt::Debug for Request {
     }
 }
 
+// may not be in use? We'll see
 impl Request {
     /// If the decoded URL of the request starts with `prefix`, builds a new `Request` that is
     /// the same as the original but without that prefix.
@@ -109,9 +112,9 @@ impl Request {
         Some(Request {
             method: self.method.clone(),
             url: self.url[prefix.len()..].to_owned(),
-            headers: self.headers.clone(), // TODO: expensive
+            headers: self.headers.clone(), // TODO: expensive, can we consume?
             https: self.https,
-            data: self.data.clone(),
+            data: self.data.clone(), // TODO: Expensive? Can we consume?
             remote_addr: self.remote_addr,
         })
     }
@@ -164,7 +167,7 @@ impl Request {
     /// # Example
     ///
     /// ```
-    /// use rouille::Request;
+    /// use tiny_http::Response;
     ///
     /// let request = Request::fake_http("GET", "/hello%20world?foo=bar", vec![], vec![]);
     /// assert_eq!(request.url(), "/hello world");
@@ -224,8 +227,6 @@ impl Request {
     /// # Example
     ///
     /// ```
-    /// use rouille::{Request, Response};
-    ///
     /// # fn track_user(request: &Request) {}
     /// fn handle(request: &Request) -> Response {
     ///     if !request.do_not_track().unwrap_or(false) {
@@ -253,7 +254,7 @@ impl Request {
     ///
     /// ```
     /// use std::io::Read;
-    /// use rouille::{Request, Response, ResponseBody};
+    /// use tiny_http::Response;
     ///
     /// fn echo(request: &Request) -> Response {
     ///     let mut data = request.data().expect("Oops, body already retrieved, problem \
@@ -284,7 +285,7 @@ impl Request {
     /// # Example
     ///
     /// ```
-    /// use rouille::{Request, Response};
+    /// use tiny_http::Response;
     ///
     /// fn handle(request: &Request) -> Response {
     ///     Response::text(format!("Your IP is: {:?}", request.remote_addr()))
@@ -303,23 +304,47 @@ enum Executor {
     Pooled { pool: threadpool::ThreadPool },
 }
 
-pub struct Server<F> {
-    server: tiny_http::Server,
-    handler: Arc<AssertUnwindSafe<F>>,
-    executor: Executor,
+*/
+
+// FIXME: Got lint warning complaining server and on_missing_method not in used.
+#[allow(dead_code)]
+pub struct Server {
+    server: TinyHttpServer,
+    // handler: Arc<AssertUnwindSafe<F>>,
+    // executor: Executor,
     handlers: HandlerMap,
-    on_missing_method: Handler,
+    // on_missing_method: Handler,
 }
 
-impl<F> Server<F> {
-    // pub fn new() -> Server {
-    //     Server::default()
-    // }
+impl Default for Server {
+    fn default() -> Self {
+        let localhost = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 8000));
+        let server = TinyHttpServer::http(localhost).unwrap();
+        Self {
+            server,
+            handlers: HashMap::new(),
+            // on_missing_method: Box::new(on_missing_method),
+        }
+    }
+}
+
+impl Server /*<F>*/ {
+    pub fn new(port: u16) -> Result<Server> {
+        let localhost = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
+        let server =
+            TinyHttpServer::http(localhost).map_err(|e| XmlError::Server(e.to_string()))?;
+
+        Ok(Self {
+            server,
+            handlers: HashMap::new(),
+            // on_missing_method: Box::new(on_missing_method),
+        })
+    }
 
     pub fn register_value<K, T>(&mut self, name: K, handler: T)
     where
         K: Into<String>,
-        T: Fn(Vec<Value>) -> Response + Send + Sync + 'static,
+        T: Fn(Vec<Value>) -> XmlResult + Send + Sync + 'static,
     {
         self.handlers.insert(name.into(), Box::new(handler));
     }
@@ -335,8 +360,8 @@ impl<F> Server<F> {
         Treq: Deserialize<'a>,
         Tres: Serialize,
         Thandler: Fn(Treq) -> std::result::Result<Tres, Fault> + Send + Sync + 'static,
-        Tef: Fn(&XmlError) -> Response + Send + Sync + 'static,
-        Tdf: Fn(&XmlError) -> Response + Send + Sync + 'static,
+        Tef: Fn(&XmlError) -> XmlResult + Send + Sync + 'static,
+        Tdf: Fn(&XmlError) -> XmlResult + Send + Sync + 'static,
     {
         self.register_value(name, move |req| {
             let params = match from_params(req) {
@@ -358,91 +383,80 @@ impl<F> Server<F> {
         self.register(name, handler, on_encode_fail, on_decode_fail);
     }
 
-    pub fn set_on_missing<T>(&mut self, handler: T)
-    where
-        T: Fn(Vec<Value>) -> Response + Send + Sync + 'static,
-    {
-        self.on_missing_method = Box::new(handler);
-    }
-
-    // todo - what is this suppose to do?
-    pub fn bind(
-        self,
-        _uri: &std::net::SocketAddr,
-    ) -> Result<Server<F>>
-    {
-        // Trying to fix this plugin so blender doesn't have any compile time issue in the future updates.
-        // three crates were marked depreciated and may stop build unless author of xml-rpc-rs can maintain their crate again.
-        // I re-did some code here to use different library while maintaining similar API calls.
-        // self.listener.incoming();
-        // let _sock: SocketAddr = uri.into();
-        // let port = sock.port();
-        // Server::new(port)
-            // .map_err(|err| ErrorKind::BindFail(err.to_string()).into())
-            // .map(BoundServer::new)
-            // this function expects Ok(BoundServer)
-        Ok(self)
-    }
+    // pub fn set_on_missing<T>(&mut self, handler: T)
+    // where
+    //     T: Fn(Vec<Value>) -> Response + Send + Sync + 'static,
+    // {
+    //     self.on_missing_method = Box::new(handler);
+    // }
 
     // the request came from rouille, but rouille have dependency issues that needed to be resolved.
     // find a substitution replacement and used it instead.
-    fn handle_outer(&self, request: &Request) -> Response {
-        use super::xmlfmt::value::ToXml;
-
-        // get the content of the body
-        let body = match request.data() {
-            Some(data) => data,
-            None => return Err(Fault::empty()),
-        };
-
-        // parse the body into xml call
-        let call: Call = match parse::call(body) {
+    // FIXME: Got unused code here but is being used?
+    #[allow(dead_code)]
+    fn handle_outer(&self, request: &mut Request) -> XmlResult {
+        let call = match parse::call(request.as_reader()) {
             Ok(data) => data,
             Err(_err) => return Err(Fault::empty()),
         };
 
-        // handle the xml callback
-        let res = self.handle(call);
-        let body = res.to_xml();
-
-        // TODO: replace with reqwest appropriate response
-        XML::from_data(Value::String("text/xml".into()), Value::String(body))
+        self.handle(call)
     }
 
-    fn handle(&self, req: Call) -> Response {
-        self.handlers
-            .get(&req.name)
-            .unwrap_or(&self.on_missing_method)(req.params)
+    #[allow(dead_code)]
+    fn poll(&self) {
+        // think there's already a transport we could use?
+        for mut request in self.server.incoming_requests() {
+            let result = self.handle_outer(&mut request);
+            // with this xml result, we should find the handler that subscribe to this and invoke event
+
+            let response = Response::from_string(result.to_xml());
+            match request.respond(response) {
+                Ok(data) => println!("Successfully responded! {data:?}"),
+                Err(e) => println!("Fail to respond with this error message: {e:?}"),
+            };
+
+            // TODO: What's the XML header consist of?
+            // how do we start reading the first element? How big is the first element?
+            // const HEADER_SIZE: usize = r#"<?xml version="1.0"?>"#.as_bytes().len();
+            // let mut header_buf = [0; HEADER_SIZE];
+            // match reader.read(&mut header_buf) {
+            //     Ok(size) =>
+            // }
+        }
+    }
+
+    /// This function is design to send a calling command to the client from the server.
+    /// Use this as a way to invoke methods or function on the python side of environment.
+    // TODO: Why is this method private? Where does handle get invoke from?
+    fn handle(&self, req: Call) -> XmlResult {
+        match self.handlers.get(&req.name) {
+            Some(v) => v(req.params),
+            None => Err(Fault::new(
+                -1,
+                format!("No handlers found for {}", &req.name),
+            )),
+        }
     }
 }
 
-// but with a fn call that takes in request and returns Response
-// server struct used here was from rouille lib. TODO: Finish impl rouille lib
-// Do I need this and just rely on tiny_http?
-// pub struct BoundServer<F>
-// where 
-//     F: Send + Sync + 'static + Fn(&Request) -> Response
-// {
-//     server: Server<F>,
-// }
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-// impl<F> BoundServer<F>
-// where 
-//     F: Send + Sync + 'static + Fn(&Request) -> Response
-// {
-//     fn new(server: Server<F>) -> Self {
-//         Self { server }
-//     }
+    #[test]
+    fn start_simple_server_should_succeed() {
+        let server = Server::new(8001);
+        assert!(server.is_ok());
+        // I would assume that leaving this scope would free the server from being used?
+    }
 
-//     pub fn local_addr(&self) -> &SocketAddr {
-//         self.server.server_addr()
-//     }
+    #[test]
+    fn server_should_fail_for_port_already_in_used() {
+        let main_server = Server::new(8000);
+        assert!(main_server.is_ok());
 
-//     pub fn run(self) {
-//         self.server.run()
-//     }
-
-//     pub fn poll(&self) {
-//         self.server.poll()
-//     }
-// }
+        let problem_server = Server::new(8000);
+        assert!(problem_server.is_err());
+    }
+}

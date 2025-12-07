@@ -1,4 +1,4 @@
-use super::super::Value;
+use crate::xmlfmt::Value;
 use serde::Deserialize;
 use serde_bytes;
 use std::collections::HashMap;

@@ -19,4 +19,4 @@ mod xmlfmt;
 
 pub use client::{call, call_value, Client};
 pub use server::Server;
-pub use xmlfmt::{error::XmlError, from_params, into_params, Call, Fault, Params, Response, Value};
+pub use xmlfmt::{error::XmlError, from_params, into_params, Call, Fault, Params, XmlResult, Value};

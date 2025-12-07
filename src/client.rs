@@ -1,10 +1,13 @@
-// use super::error::{Result, ResultExt};
-use super::xmlfmt::{from_params, into_params, parse, Call, Fault, Params, Response};
-use super::xmlfmt::error::XmlError;
+// use crate::error::{Result, ResultExt};
+use crate::xmlfmt::alias::{Params, XmlResult};
+use crate::xmlfmt::call::Call;
+use crate::xmlfmt::error::XmlError;
+use crate::xmlfmt::fault::Fault;
+use crate::xmlfmt::{from_params, into_params, parse};
 use serde::{Deserialize, Serialize};
 use std;
 
-pub fn call_value<URL, Tkey>(uri: &URL, name: Tkey, params: Params) -> Result<Response, XmlError>
+pub fn call_value<URL, Tkey>(uri: &URL, name: Tkey, params: Params) -> Result<XmlResult, XmlError>
 where
     URL: Clone,
     ureq::http::Uri: TryFrom<URL>,
@@ -20,7 +23,7 @@ pub fn call<'a, URL, Tkey, Treq, Tres>(
     req: Treq,
 ) -> Result<std::result::Result<Tres, Fault>, XmlError>
 where
-    URL: Clone,    
+    URL: Clone,
     ureq::http::Uri: TryFrom<URL>,
     <ureq::http::Uri as TryFrom<URL>>::Error: Into<ureq::http::Error>,
     Tkey: Into<String>,
@@ -33,19 +36,23 @@ where
 pub struct Client;
 
 impl Client {
-
     pub fn new() -> Result<Client, XmlError> {
         Ok(Client {})
     }
 
-    pub fn call_value<URL, Tkey>(&mut self, uri: &URL, name: Tkey, params: Params) -> Result<Response, XmlError>
+    pub fn call_value<URL, Tkey>(
+        &mut self,
+        uri: &URL,
+        name: Tkey,
+        params: Params,
+    ) -> Result<XmlResult, XmlError>
     where
         URL: Clone,
         ureq::http::Uri: TryFrom<URL>,
         <ureq::http::Uri as TryFrom<URL>>::Error: Into<ureq::http::Error>,
         Tkey: Into<String>,
     {
-        use super::xmlfmt::value::ToXml;
+        use crate::xmlfmt::to_xml::ToXml;
         let body = Call::new(name.into(), params).to_xml();
         let mut response = ureq::post(uri.clone())
             .header("Content-Type", "text/xml")

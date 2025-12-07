@@ -1,5 +1,5 @@
-use super::Value;
-use super::error::{Result, XmlError};
+use crate::xmlfmt::Value;
+use crate::xmlfmt::error::{Result, XmlError};
 use serde::de::{
     DeserializeSeed, EnumAccess, MapAccess, SeqAccess, Unexpected, VariantAccess, Visitor,
 };

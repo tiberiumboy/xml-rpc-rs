@@ -1,6 +1,6 @@
 #![allow(unknown_lints, unused_doc_comments)]
-// pub use super::xmlfmt::error::{Error as FmtError, ErrorKind as FmtErrorKind};
-use serde::{Deserialize, de, ser, Serialize};
+// pub use crate::xmlfmt::error::{Error as FmtError, ErrorKind as FmtErrorKind};
+use serde::{Deserialize, Serialize, de, ser};
 use std::fmt;
 
 pub type Result<T> = std::result::Result<T, XmlError>;
@@ -9,6 +9,7 @@ pub type Result<T> = std::result::Result<T, XmlError>;
 #[derive(Debug, Serialize, Deserialize)]
 pub enum XmlError {
     Format(FmtError),
+    Server(String), // TODO: Handle errors from tiny_http instead
     Http(String), // TODO: force type to ureq::Error, but had issue. Replace to see compiler errors.
 }
 
@@ -29,13 +30,13 @@ impl fmt::Display for FmtError {
     }
 }
 
-
 // ser+de complains that XmlError does not implement std::fmt::Display + Debug?
 impl fmt::Display for XmlError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             XmlError::Format(e) => write!(f, "Format error: {}", e),
             XmlError::Http(t) => write!(f, "HTTP error: {}", t),
+            XmlError::Server(s) => write!(f, "Server error: {}", s),
         }
     }
 }
@@ -55,7 +56,6 @@ impl de::Error for XmlError {
         XmlError::Format(FmtError::Decoding(format!("{}", msg)))
     }
 }
-
 
 // error_chain! {
 //     foreign_links {

@@ -1,5 +1,5 @@
-use super::error::{XmlError, FmtError};
-use super::Value;
+use crate::xmlfmt::Value;
+use crate::xmlfmt::error::{FmtError, XmlError};
 use serde::{self, Serialize};
 use std::collections::HashMap;
 
