@@ -1,10 +1,9 @@
 [package]
-authors = ["Adnan Ademovic <adnanademovic100@gmail.com>"]
 description = "Pure Rust implementation of XML-RPC"
 license = "MIT"
 name = "xml-rpc"
 readme = "README.md"
-repository = "https://github.com/adnanademovic/xml-rpc-rs"
+repository = "https://github.com/tiberiumboy/xml-rpc-rs.git"
 version = "0.1.0"
 edition = "2024"
 
@@ -15,10 +14,10 @@ ureq = { version = "3", features = ["json"] }
 lazy_static = "^1.5"
 regex = "^1"
 serde = { version = "^1.0", features = ["derive"] }
-serde-xml-rs = "^0.6"
+serde-xml-rs = "^0.8"
 serde_bytes = "^0.11"
-xml-rs = "^0.8"
+xml-rs = "^1"
 url = "^2"
 percent-encoding = "2.3.1"
 threadpool = "1.8.1"
-tiny_http = "0.12.0"
+tiny_http = "*"
