@@ -5,6 +5,7 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 use regex::Regex;
 use std;
 use std::collections::HashMap;
+use std::io::Read as IoRead;
 
 fn wrap_in_string(content: String) -> String {
     lazy_static! {
@@ -24,7 +25,7 @@ fn wrap_in_string(content: String) -> String {
 
 // FIXME: Unused code but is being used for unit test...
 #[allow(dead_code)]
-pub fn xml<T: std::io::Read>(mut r: T) -> Result<Value> {
+pub fn xml<T: IoRead>(mut r: T) -> Result<Value> {
     let mut content = String::new();
     r.read_to_string(&mut content).map_err(|e| {
         XmlError::Format(FmtError::Decoding(format!(
@@ -41,7 +42,7 @@ pub fn xml<T: std::io::Read>(mut r: T) -> Result<Value> {
     data.into()
 }
 
-pub fn call<T: std::io::Read>(mut r: T) -> Result<Call> {
+pub fn call<T: IoRead>(mut r: T) -> Result<Call> {
     let mut content = String::new();
     r.read_to_string(&mut content).map_err(|e| {
         XmlError::Format(FmtError::Decoding(format!(
@@ -58,7 +59,7 @@ pub fn call<T: std::io::Read>(mut r: T) -> Result<Call> {
     data.into()
 }
 
-pub fn response<T: std::io::Read>(mut r: T) -> Result<XmlResult> {
+pub fn response<T: IoRead>(mut r: T) -> Result<XmlResult> {
     let mut content = String::new();
     r.read_to_string(&mut content).map_err(|e| {
         XmlError::Format(FmtError::Decoding(format!(
@@ -274,11 +275,10 @@ impl From<XmlStructItem> for Result<(String, Value)> {
 
 #[cfg(test)]
 mod tests {
+    use crate::xmlfmt::tests::*;
     use crate::xmlfmt::*;
     use serde::Deserialize;
     use std::collections::HashMap;
-
-    static BAD_DATA: &str = "Bad data provided";
 
     #[test]
     fn reads_pod_xml_value() {
@@ -516,5 +516,10 @@ mod tests {
         let data = parse::xml(data.as_bytes()).expect(BAD_DATA);
         let data = Vec::<i32>::deserialize(data).expect(BAD_DATA);
         assert_eq!(data, vec![33, -12, 44]);
+    }
+
+    #[test]
+    fn reads_and_writes_empty_response() {
+        tests::ser_and_de_response_value(Ok(vec![]))
     }
 }

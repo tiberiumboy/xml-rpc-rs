@@ -26,3 +26,17 @@ impl Fault {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::xmlfmt::tests::*;
+
+    #[test]
+    fn writes_fault() {
+        ser_and_de_response_value(Err(Fault {
+            code: 4,
+            message: "Too many parameters.".into(),
+        }));
+    }
+}

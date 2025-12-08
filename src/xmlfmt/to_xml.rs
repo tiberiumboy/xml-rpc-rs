@@ -1,7 +1,7 @@
-use crate::xmlfmt::alias::XmlResult;
 use crate::xmlfmt::call::Call;
 use crate::xmlfmt::fault::Fault;
 use crate::xmlfmt::value::Value;
+use crate::xmlfmt::*;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 
 use xml::escape::escape_str_pcdata;
