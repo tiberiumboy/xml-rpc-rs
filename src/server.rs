@@ -32,9 +32,11 @@ pub fn on_encode_fail(err: &XmlError) -> XmlResult {
 }
 
 // FIXME: May not be in used?
-#[allow(dead_code)]
-fn on_missing_method(_: Vec<Value>) -> XmlResult {
-    Err(Fault::new(404, "Requested method does not exist"))
+// #[allow(dead_code)]
+fn on_missing_method(e: Vec<Value>) -> XmlResult {
+    Err(
+        Fault::new(404, 
+            format!("Requested method does not exist: {:?}", e.to_xml())))
 }
 
 /// Iterator to the list of headers in a request.
@@ -307,13 +309,12 @@ enum Executor {
 */
 
 // FIXME: Got lint warning complaining server and on_missing_method not in used.
-#[allow(dead_code)]
 pub struct Server {
     server: TinyHttpServer,
-    // handler: Arc<AssertUnwindSafe<F>>,
     // executor: Executor,
     handlers: HandlerMap,
-    // on_missing_method: Handler,
+    #[allow(dead_code)] // todo: find a way to use this?
+    on_missing_method: Handler,
 }
 
 impl Default for Server {
@@ -323,12 +324,12 @@ impl Default for Server {
         Self {
             server,
             handlers: HashMap::new(),
-            // on_missing_method: Box::new(on_missing_method),
+            on_missing_method: Box::new(|e| on_missing_method(e)),
         }
     }
 }
 
-impl Server /*<F>*/ {
+impl Server {
     pub fn new(port: u16) -> Result<Server> {
         let localhost = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
         let server =
@@ -337,7 +338,7 @@ impl Server /*<F>*/ {
         Ok(Self {
             server,
             handlers: HashMap::new(),
-            // on_missing_method: Box::new(on_missing_method),
+            on_missing_method: Box::new(|e| on_missing_method(e)),
         })
     }
 
