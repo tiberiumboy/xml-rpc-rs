@@ -1,5 +1,5 @@
-use crate::xmlfmt::Value;
-use crate::xmlfmt::error::{FmtError, XmlError};
+use crate::xmlfmt::{Data, FmtError, Member, Param, Value, XmlError};
+// use crate::xmlfmt::;
 use serde::{self, Serialize};
 use std::collections::HashMap;
 
@@ -74,18 +74,20 @@ impl serde::Serializer for Serializer {
     }
 
     fn serialize_none(self) -> Result<Self::Ok, Self::Error> {
-        Ok(Value::Array(Vec::new()))
+        Ok(Value::Nil)
     }
 
     fn serialize_some<T>(self, value: &T) -> Result<Self::Ok, Self::Error>
     where
         T: Serialize + ?Sized,
     {
-        Ok(Value::Array(vec![value.serialize(self)?]))
+        let params = vec![value.serialize(self)?];
+        let data = Data::new(params);
+        Ok(Value::Array(Box::new(data)))
     }
 
     fn serialize_unit(self) -> Result<Self::Ok, Self::Error> {
-        Ok(Value::Struct(HashMap::new()))
+        Ok(Value::Struct(Box::new(HashMap::new())))
     }
 
     fn serialize_unit_struct(self, _name: &'static str) -> Result<Self::Ok, Self::Error> {
@@ -100,7 +102,7 @@ impl serde::Serializer for Serializer {
     ) -> Result<Self::Ok, Self::Error> {
         let mut members = HashMap::new();
         members.insert(variant.into(), self.serialize_unit()?);
-        Ok(Value::Struct(members))
+        Ok(Value::Struct(Box::new(members)))
     }
 
     fn serialize_newtype_struct<T>(
@@ -126,20 +128,20 @@ impl serde::Serializer for Serializer {
     {
         let mut members = HashMap::new();
         members.insert(variant.into(), value.serialize(self)?);
-        Ok(Value::Struct(members))
+        Ok(Value::Struct(Box::new(members)))
     }
 
     fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq, Self::Error> {
         self.serialize_tuple(len.unwrap_or(0))
-    }
-
-    fn serialize_tuple(self, len: usize) -> Result<Self::SerializeTuple, Self::Error> {
-        Ok(SerializeVec {
-            vec: Vec::with_capacity(len),
-            variant: None,
-        })
-    }
-
+        }
+        
+        fn serialize_tuple(self, len: usize) -> Result<Self::SerializeTuple, Self::Error> {
+            Ok(SerializeVec {
+                vec: Vec::with_capacity(len),
+                variant: None,
+            })
+        }
+                
     fn serialize_tuple_struct(
         self,
         _name: &'static str,
@@ -190,6 +192,7 @@ impl serde::Serializer for Serializer {
             variant: Some(variant.into()),
         })
     }
+
 }
 
 fn to_value<T>(value: &T) -> Result<Value, XmlError>
@@ -201,7 +204,7 @@ where
 
 #[doc(hidden)]
 pub struct SerializeVec {
-    vec: Vec<Value>,
+    vec: Param,
     variant: Option<String>,
 }
 
@@ -218,15 +221,16 @@ impl serde::ser::SerializeSeq for SerializeVec {
     }
 
     fn end(self) -> Result<Value, XmlError> {
-        let content = Value::Array(self.vec);
-        Ok(match self.variant {
+        let data = Data::new(self.vec);
+        let content = Value::Array(Box::new(data));
+        let result = match self.variant {
             Some(variant) => {
-                let mut members = HashMap::new();
-                members.insert(variant, content);
-                Value::Struct(members)
+                let member = Member::new(variant, content);
+                Value::Struct{ member: Box::new(vec![member]) }
             }
             None => content,
-        })
+        };
+        Ok(result)
     }
 }
 
@@ -288,10 +292,10 @@ pub struct SerializeMap {
 impl serde::ser::SerializeMap for SerializeMap {
     type Ok = Value;
     type Error = XmlError;
-
+    
     fn serialize_key<T>(&mut self, key: &T) -> Result<(), XmlError>
     where
-        T: Serialize + ?Sized,
+    T: Serialize + ?Sized,
     {
         match to_value(&key)? {
             Value::Bool(v) => self.next_key = Some(v.to_string()),
@@ -304,10 +308,10 @@ impl serde::ser::SerializeMap for SerializeMap {
         };
         Ok(())
     }
-
+    
     fn serialize_value<T>(&mut self, value: &T) -> Result<(), XmlError>
     where
-        T: Serialize + ?Sized,
+    T: Serialize + ?Sized,
     {
         let key = self.next_key.take();
         // Panic because this indicates a bug in the program rather than an
@@ -316,44 +320,48 @@ impl serde::ser::SerializeMap for SerializeMap {
         self.map.insert(key, to_value(&value)?);
         Ok(())
     }
-
+    
+    // TODO: See about finalizing this somehow?
     fn end(self) -> Result<Value, XmlError> {
-        let content = Value::Struct(self.map);
         Ok(match self.variant {
+            // I'm not sure where or how variant comes to play for this implementation?
             Some(variant) => {
-                let mut members = HashMap::new();
-                members.insert(variant, content);
-                Value::Struct(members)
+                let members = self.map.iter().fold(Vec::new(), |mut list, (name, value)| {
+                    let member = Member::new(name, value.to_owned());
+                    list.push(member);
+                    list 
+                });
+                Value::Struct{ member: Box::new(members) }
             }
-            None => content,
+            None => todo!("What happens here?"),
         })
-    }
+    }   
 }
-
+                        
 impl serde::ser::SerializeStruct for SerializeMap {
     type Ok = Value;
     type Error = XmlError;
-
+    
     fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<(), XmlError>
     where
-        T: Serialize + ?Sized,
+    T: Serialize + ?Sized,
     {
         serde::ser::SerializeMap::serialize_key(self, key)?;
         serde::ser::SerializeMap::serialize_value(self, value)
     }
-
+        
     fn end(self) -> Result<Value, XmlError> {
         serde::ser::SerializeMap::end(self)
     }
 }
-
+                    
 impl serde::ser::SerializeStructVariant for SerializeMap {
     type Ok = Value;
     type Error = XmlError;
-
+    
     fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<(), XmlError>
     where
-        T: Serialize + ?Sized,
+    T: Serialize + ?Sized,
     {
         serde::ser::SerializeMap::serialize_key(self, key)?;
         serde::ser::SerializeMap::serialize_value(self, value)
@@ -363,6 +371,7 @@ impl serde::ser::SerializeStructVariant for SerializeMap {
         serde::ser::SerializeMap::end(self)
     }
 }
+
 
 #[cfg(test)]
 mod tests {
@@ -480,15 +489,15 @@ mod tests {
         let none: Option<i32> = None;
         assert_eq!(
             none.serialize(Serializer {}).unwrap(),
-            Value::Array(Vec::new())
+            Value::Array(Box::new(Data::new(Vec::new())))
         );
         assert_eq!(
             Some(33i32).serialize(Serializer {}).unwrap(),
-            Value::Array(vec![Value::Int(33)])
+            Value::Array(Box::new(Data::new(vec![Value::Int(33)])))
         );
         assert_eq!(
             Some("txt").serialize(Serializer {}).unwrap(),
-            Value::Array(vec![Value::String("txt".into())])
+            Value::Array(Box::new(Data::new(vec![Value::String("txt".into())])))
         );
     }
 
@@ -527,53 +536,57 @@ mod tests {
 
     #[test]
     fn writes_vector_as_array() {
-        assert_eq!(
-            vec![33, 15, 44, 12].serialize(Serializer {}).unwrap(),
-            Value::Array(vec![
+        let expected = Value::Array(Box::new(Data::new(vec![
                 Value::Int(33),
                 Value::Int(15),
                 Value::Int(44),
                 Value::Int(12),
-            ])
-        );
+            ])));
         assert_eq!(
-            vec!['a', 'b', 'c', 'd'].serialize(Serializer {}).unwrap(),
-            Value::Array(vec![
+            vec![33, 15, 44, 12].serialize(Serializer {}).unwrap(),
+            expected
+        );
+        let expected = Value::Array(Box::new(Data::new(vec![
                 Value::String("a".into()),
                 Value::String("b".into()),
                 Value::String("c".into()),
                 Value::String("d".into()),
-            ])
+            ])));
+        assert_eq!(
+            vec!['a', 'b', 'c', 'd'].serialize(Serializer {}).unwrap(),
+            expected
         );
     }
 
     #[test]
     fn writes_tuple_as_array() {
-        assert_eq!(
-            (4, 1_000_000_000_000i64, "hello", true)
-                .serialize(Serializer {})
-                .unwrap(),
-            Value::Array(vec![
+        let expected = Value::Array(Box::new(Data::new(vec![
                 Value::Int(4),
                 Value::String("1000000000000".into()),
                 Value::String("hello".into()),
                 Value::Bool(true),
-            ])
+            ])));
+        assert_eq!(
+            (4, 1_000_000_000_000i64, "hello", true)
+                .serialize(Serializer {})
+                .unwrap(),
+            expected
         );
 
         #[derive(Serialize)]
         struct Helper(u8, u64, String, bool);
 
-        assert_eq!(
-            Helper(4, 1_000_000_000_000u64, "hello".into(), true)
-                .serialize(Serializer {})
-                .unwrap(),
-            Value::Array(vec![
+        let expected = Value::Array(Box::new(Data::new(vec![
                 Value::Int(4),
                 Value::String("1000000000000".into()),
                 Value::String("hello".into()),
                 Value::Bool(true),
-            ])
+            ])));
+        assert_eq!(
+            Helper(4, 1_000_000_000_000u64, "hello".into(), true)
+                .serialize(Serializer {})
+                .unwrap(),
+            expected
         );
     }
 
@@ -616,12 +629,12 @@ mod tests {
         let mut members = HashMap::new();
         members.insert(
             "foo".into(),
-            Value::Array(vec![Value::Int(44), Value::Int(12)]),
+            Value::to_array(vec![Value::Int(44), Value::Int(12)]),
         );
-        members.insert("bar".into(), Value::Array(vec![]));
+        members.insert("bar".into(), Value::to_array(vec![]));
         members.insert(
             "baz".into(),
-            Value::Array(vec![Value::Int(-3), Value::Int(44), Value::Int(28)]),
+            Value::to_array(vec![Value::Int(-3), Value::Int(44), Value::Int(28)]),
         );
 
         assert_eq!(
@@ -640,17 +653,17 @@ mod tests {
         let mut members = HashMap::new();
         members.insert(
             "foo".into(),
-            Value::Array(vec![Value::Int(44), Value::Int(12)]),
+            Value::to_array(vec![Value::Int(44), Value::Int(12)]),
         );
-        members.insert("bar".into(), Value::Array(vec![]));
+        members.insert("bar".into(), Value::to_array(vec![]));
         members.insert(
             "baz".into(),
-            Value::Array(vec![Value::Int(-3), Value::Int(44), Value::Int(28)]),
+            Value::to_array(vec![Value::Int(-3), Value::Int(44), Value::Int(28)]),
         );
 
         assert_eq!(
             data.serialize(Serializer {}).unwrap(),
-            Value::Struct(members)
+            Value::Struct(Box::new(members))
         );
     }
 
@@ -664,12 +677,12 @@ mod tests {
         let mut members = HashMap::new();
         members.insert(
             "12".into(),
-            Value::Array(vec![Value::Int(44), Value::Int(12)]),
+            Value::to_array(vec![Value::Int(44), Value::Int(12)]),
         );
-        members.insert("-33".into(), Value::Array(vec![]));
+        members.insert("-33".into(), Value::to_array(vec![]));
         members.insert(
             "44".into(),
-            Value::Array(vec![Value::Int(-3), Value::Int(44), Value::Int(28)]),
+            Value::to_array(vec![Value::Int(-3), Value::Int(44), Value::Int(28)]),
         );
 
         assert_eq!(
@@ -688,12 +701,12 @@ mod tests {
         let mut members = HashMap::new();
         members.insert(
             "a".into(),
-            Value::Array(vec![Value::Int(44), Value::Int(12)]),
+            Value::to_array(vec![Value::Int(44), Value::Int(12)]),
         );
-        members.insert("b".into(), Value::Array(vec![]));
+        members.insert("b".into(), Value::to_array(vec![]));
         members.insert(
             "c".into(),
-            Value::Array(vec![Value::Int(-3), Value::Int(44), Value::Int(28)]),
+            Value::to_array(vec![Value::Int(-3), Value::Int(44), Value::Int(28)]),
         );
 
         assert_eq!(
@@ -711,9 +724,9 @@ mod tests {
         let mut members = HashMap::new();
         members.insert(
             "true".into(),
-            Value::Array(vec![Value::Int(44), Value::Int(12)]),
+            Value::to_array(vec![Value::Int(44), Value::Int(12)]),
         );
-        members.insert("false".into(), Value::Array(vec![]));
+        members.insert("false".into(), Value::to_array(vec![]));
 
         assert_eq!(
             data.serialize(Serializer {}).unwrap(),
@@ -757,7 +770,7 @@ mod tests {
         let mut members = HashMap::new();
         members.insert(
             "Baz".into(),
-            Value::Array(vec![Value::Bool(false), Value::String("tsk".into())]),
+            Value::to_array(vec![Value::Bool(false), Value::String("tsk".into())]),
         );
         assert_eq!(
             Helper::Baz(false, "tsk").serialize(Serializer {}).unwrap(),
@@ -768,7 +781,7 @@ mod tests {
         submembers.insert("alpha".into(), Value::Int(-4));
         submembers.insert(
             "beta".into(),
-            Value::Array(vec![
+            Value::to_array(vec![
                 Value::Bool(true),
                 Value::Bool(false),
                 Value::Bool(true),
@@ -776,7 +789,7 @@ mod tests {
         );
 
         let mut members = HashMap::new();
-        members.insert("Qux".into(), Value::Struct(submembers));
+        members.insert("Qux".into(), Value::Struct(Box::new(submembers)));
         assert_eq!(
             Helper::Qux {
                 alpha: -4,

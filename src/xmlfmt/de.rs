@@ -1,524 +1,15 @@
-use crate::xmlfmt::Value;
-use crate::xmlfmt::error::{Result, XmlError};
+use crate::xmlfmt::{XmlError, FmtError, XmlResult, Value};
 use serde::de::{
-    DeserializeSeed, EnumAccess, MapAccess, SeqAccess, Unexpected, VariantAccess, Visitor,
+    DeserializeSeed, Unexpected, VariantAccess, Visitor,
 };
 use serde::{self, Deserializer};
 use std;
-use std::collections::HashMap;
-use std::vec;
-
-impl<'de> serde::Deserializer<'de> for Value {
-    type Error = XmlError;
-
-    #[inline]
-    fn deserialize_any<V>(self, visitor: V) -> Result<V::Value>
-    where
-        V: Visitor<'de>,
-    {
-        match self {
-            Value::Int(v) => visitor.visit_i32(v),
-            Value::Bool(v) => visitor.visit_bool(v),
-            Value::DateTime(v) | Value::String(v) => visitor.visit_string(v),
-            Value::Double(v) => visitor.visit_f64(v),
-            Value::Base64(v) => visitor.visit_bytes(v.as_slice()),
-            Value::Array(v) => {
-                let len = v.len();
-                let mut deserializer = SeqDeserializer::new(v);
-                let seq = visitor.visit_seq(&mut deserializer)?;
-                let remaining = deserializer.iter.len();
-                if remaining == 0 {
-                    Ok(seq)
-                } else {
-                    Err(serde::de::Error::invalid_length(
-                        len,
-                        &"fewer elements in array",
-                    ))
-                }
-            }
-            Value::Struct(v) => {
-                let len = v.len();
-                let mut deserializer = MapDeserializer::new(v);
-                let map = visitor.visit_map(&mut deserializer)?;
-                let remaining = deserializer.iter.len();
-                if remaining == 0 {
-                    Ok(map)
-                } else {
-                    Err(serde::de::Error::invalid_length(
-                        len,
-                        &"fewer elements in map",
-                    ))
-                }
-            }
-        }
-    }
-
-    fn deserialize_bool<V>(self, visitor: V) -> Result<V::Value>
-    where
-        V: Visitor<'de>,
-    {
-        match self {
-            Value::Bool(v) => visitor.visit_bool(v),
-            Value::String(v) => match v.as_str() {
-                "true" => visitor.visit_bool(true),
-                "false" => visitor.visit_bool(false),
-                _ => Err(serde::de::Error::invalid_value(
-                    Unexpected::Str(&v),
-                    &visitor,
-                )),
-            },
-            _ => Err(serde::de::Error::invalid_value(self.unexpected(), &visitor)),
-        }
-    }
-
-    fn deserialize_i8<V>(self, visitor: V) -> Result<V::Value>
-    where
-        V: Visitor<'de>,
-    {
-        let v = handle_integer(self, &visitor)?;
-        visitor.visit_i8(v)
-    }
-
-    fn deserialize_i16<V>(self, visitor: V) -> Result<V::Value>
-    where
-        V: Visitor<'de>,
-    {
-        let v = handle_integer(self, &visitor)?;
-        visitor.visit_i16(v)
-    }
-
-    fn deserialize_i32<V>(self, visitor: V) -> Result<V::Value>
-    where
-        V: Visitor<'de>,
-    {
-        let v = handle_integer(self, &visitor)?;
-        visitor.visit_i32(v)
-    }
-
-    fn deserialize_i64<V>(self, visitor: V) -> Result<V::Value>
-    where
-        V: Visitor<'de>,
-    {
-        let v = handle_integer(self, &visitor)?;
-        visitor.visit_i64(v)
-    }
-
-    fn deserialize_u8<V>(self, visitor: V) -> Result<V::Value>
-    where
-        V: Visitor<'de>,
-    {
-        let v = handle_integer(self, &visitor)?;
-        visitor.visit_u8(v)
-    }
-
-    fn deserialize_u16<V>(self, visitor: V) -> Result<V::Value>
-    where
-        V: Visitor<'de>,
-    {
-        let v = handle_integer(self, &visitor)?;
-        visitor.visit_u16(v)
-    }
-
-    fn deserialize_u32<V>(self, visitor: V) -> Result<V::Value>
-    where
-        V: Visitor<'de>,
-    {
-        let v = handle_integer(self, &visitor)?;
-        visitor.visit_u32(v)
-    }
-
-    fn deserialize_u64<V>(self, visitor: V) -> Result<V::Value>
-    where
-        V: Visitor<'de>,
-    {
-        let v = handle_integer(self, &visitor)?;
-        visitor.visit_u64(v)
-    }
-
-    fn deserialize_f32<V>(self, visitor: V) -> Result<V::Value>
-    where
-        V: Visitor<'de>,
-    {
-        match self {
-            Value::Double(v) => visitor.visit_f32(v as f32),
-            Value::String(v) => {
-                let x: Result<f32> = v
-                    .parse()
-                    .map_err(|_| serde::de::Error::invalid_value(Unexpected::Str(&v), &visitor));
-                visitor.visit_f32(x?)
-            }
-            _ => Err(serde::de::Error::invalid_value(self.unexpected(), &visitor)),
-        }
-    }
-
-    fn deserialize_f64<V>(self, visitor: V) -> Result<V::Value>
-    where
-        V: Visitor<'de>,
-    {
-        match self {
-            Value::Double(v) => visitor.visit_f64(v),
-            Value::String(v) => {
-                let x: Result<f64> = v
-                    .parse()
-                    .map_err(|_| serde::de::Error::invalid_value(Unexpected::Str(&v), &visitor));
-                visitor.visit_f64(x?)
-            }
-            Value::Int(v) => visitor.visit_f64(v as f64),
-            _ => Err(serde::de::Error::invalid_value(self.unexpected(), &visitor)),
-        }
-    }
-
-    fn deserialize_char<V>(self, visitor: V) -> Result<V::Value>
-    where
-        V: Visitor<'de>,
-    {
-        if let Value::String(v) = self {
-            if v.len() != 1 {
-                return Err(serde::de::Error::invalid_value(
-                    Unexpected::Str(&v),
-                    &"string with a single character",
-                ));
-            }
-            visitor.visit_char(v.chars().next().unwrap())
-        } else {
-            Err(serde::de::Error::invalid_value(self.unexpected(), &visitor))
-        }
-    }
-
-    fn deserialize_str<V>(self, visitor: V) -> Result<V::Value>
-    where
-        V: Visitor<'de>,
-    {
-        if let Value::String(v) = self {
-            visitor.visit_str(&v)
-        } else {
-            Err(serde::de::Error::invalid_value(self.unexpected(), &visitor))
-        }
-    }
-
-    fn deserialize_string<V>(self, visitor: V) -> Result<V::Value>
-    where
-        V: Visitor<'de>,
-    {
-        if let Value::String(v) = self {
-            visitor.visit_string(v)
-        } else {
-            Err(serde::de::Error::invalid_value(self.unexpected(), &visitor))
-        }
-    }
-
-    fn deserialize_bytes<V>(self, visitor: V) -> Result<V::Value>
-    where
-        V: Visitor<'de>,
-    {
-        if let Value::Base64(v) = self {
-            visitor.visit_bytes(v.as_slice())
-        } else {
-            Err(serde::de::Error::invalid_value(self.unexpected(), &visitor))
-        }
-    }
-
-    fn deserialize_byte_buf<V>(self, visitor: V) -> Result<V::Value>
-    where
-        V: Visitor<'de>,
-    {
-        if let Value::Base64(v) = self {
-            visitor.visit_byte_buf(v)
-        } else {
-            Err(serde::de::Error::invalid_value(self.unexpected(), &visitor))
-        }
-    }
-
-    fn deserialize_option<V>(self, visitor: V) -> Result<V::Value>
-    where
-        V: Visitor<'de>,
-    {
-        match self {
-            Value::Array(mut v) => {
-                let v1 = v.pop();
-                if !v.is_empty() {
-                    return Err(serde::de::Error::invalid_value(
-                        Unexpected::Seq,
-                        &"array with a single element",
-                    ));
-                }
-                match v1 {
-                    Some(x) => visitor.visit_some(x),
-                    None => visitor.visit_none(),
-                }
-            }
-
-            v => visitor.visit_some(v),
-        }
-    }
-
-    fn deserialize_unit<V>(self, visitor: V) -> Result<V::Value>
-    where
-        V: Visitor<'de>,
-    {
-        if let Value::Struct(v) = self {
-            if !v.is_empty() {
-                return Err(serde::de::Error::invalid_value(
-                    Unexpected::Map,
-                    &"empty map",
-                ));
-            }
-            visitor.visit_unit()
-        } else {
-            Err(serde::de::Error::invalid_value(
-                self.unexpected(),
-                &"empty map",
-            ))
-        }
-    }
-
-    fn deserialize_unit_struct<V>(self, _name: &'static str, visitor: V) -> Result<V::Value>
-    where
-        V: Visitor<'de>,
-    {
-        self.deserialize_unit(visitor)
-    }
-
-    fn deserialize_newtype_struct<V>(self, _name: &'static str, visitor: V) -> Result<V::Value>
-    where
-        V: Visitor<'de>,
-    {
-        visitor.visit_newtype_struct(self)
-    }
-
-    fn deserialize_seq<V>(self, visitor: V) -> Result<V::Value>
-    where
-        V: Visitor<'de>,
-    {
-        self.deserialize_any(visitor)
-    }
-
-    fn deserialize_tuple<V>(self, _len: usize, visitor: V) -> Result<V::Value>
-    where
-        V: Visitor<'de>,
-    {
-        self.deserialize_any(visitor)
-    }
-
-    fn deserialize_tuple_struct<V>(
-        self,
-        _name: &'static str,
-        _len: usize,
-        visitor: V,
-    ) -> Result<V::Value>
-    where
-        V: Visitor<'de>,
-    {
-        self.deserialize_any(visitor)
-    }
-
-    fn deserialize_map<V>(self, visitor: V) -> Result<V::Value>
-    where
-        V: Visitor<'de>,
-    {
-        self.deserialize_any(visitor)
-    }
-
-    fn deserialize_struct<V>(
-        self,
-        _name: &'static str,
-        _fields: &'static [&'static str],
-        visitor: V,
-    ) -> Result<V::Value>
-    where
-        V: Visitor<'de>,
-    {
-        self.deserialize_any(visitor)
-    }
-
-    fn deserialize_enum<V>(
-        self,
-        _name: &'static str,
-        _variants: &'static [&'static str],
-        visitor: V,
-    ) -> Result<V::Value>
-    where
-        V: Visitor<'de>,
-    {
-        match self {
-            Value::Struct(members) => {
-                let mut member_iter = members.into_iter();
-                if let Some((key, value)) = member_iter.next() {
-                    if member_iter.next().is_none() {
-                        return visitor.visit_enum(EnumDeserializer {
-                            variant: key,
-                            value,
-                        });
-                    }
-                }
-                Err(serde::de::Error::invalid_value(
-                    Unexpected::Map,
-                    &"map with a single key",
-                ))
-            }
-            other => Err(serde::de::Error::invalid_value(
-                other.unexpected(),
-                &"map with a single key",
-            )),
-        }
-    }
-
-    forward_to_deserialize_any! {
-        identifier ignored_any
-    }
-}
-
-struct SeqDeserializer {
-    iter: vec::IntoIter<Value>,
-}
-
-impl SeqDeserializer {
-    fn new(vec: Vec<Value>) -> Self {
-        SeqDeserializer {
-            iter: vec.into_iter(),
-        }
-    }
-}
-
-impl<'de> serde::Deserializer<'de> for SeqDeserializer {
-    type Error = XmlError;
-
-    #[inline]
-    fn deserialize_any<V>(mut self, visitor: V) -> Result<V::Value>
-    where
-        V: Visitor<'de>,
-    {
-        let len = self.iter.len();
-        let ret = visitor.visit_seq(&mut self)?;
-        let remaining = self.iter.len();
-        if remaining == 0 {
-            Ok(ret)
-        } else {
-            Err(serde::de::Error::invalid_length(
-                len,
-                &"fewer elements in array",
-            ))
-        }
-    }
-
-    forward_to_deserialize_any! {
-        bool i8 i16 i32 i64 u8 u16 u32 u64 f32 f64 char str string bytes
-        byte_buf option unit unit_struct newtype_struct seq tuple
-        tuple_struct map struct enum identifier ignored_any
-    }
-}
-
-impl<'de> SeqAccess<'de> for SeqDeserializer {
-    type Error = XmlError;
-
-    fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>>
-    where
-        T: DeserializeSeed<'de>,
-    {
-        match self.iter.next() {
-            Some(value) => seed.deserialize(value).map(Some),
-            None => Ok(None),
-        }
-    }
-
-    fn size_hint(&self) -> Option<usize> {
-        match self.iter.size_hint() {
-            (lower, Some(upper)) if lower == upper => Some(upper),
-            _ => None,
-        }
-    }
-}
-
-struct MapDeserializer {
-    iter: <HashMap<String, Value> as IntoIterator>::IntoIter,
-    value: Option<Value>,
-}
-
-impl MapDeserializer {
-    fn new(map: HashMap<String, Value>) -> Self {
-        MapDeserializer {
-            iter: map.into_iter(),
-            value: None,
-        }
-    }
-}
-
-impl<'de> MapAccess<'de> for MapDeserializer {
-    type Error = XmlError;
-
-    fn next_key_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>>
-    where
-        T: DeserializeSeed<'de>,
-    {
-        match self.iter.next() {
-            Some((key, value)) => {
-                self.value = Some(value);
-                seed.deserialize(Value::String(key)).map(Some)
-            }
-            None => Ok(None),
-        }
-    }
-
-    fn next_value_seed<T>(&mut self, seed: T) -> Result<T::Value>
-    where
-        T: DeserializeSeed<'de>,
-    {
-        match self.value.take() {
-            Some(value) => seed.deserialize(value),
-            None => Err(serde::de::Error::custom("value is missing")),
-        }
-    }
-
-    fn size_hint(&self) -> Option<usize> {
-        match self.iter.size_hint() {
-            (lower, Some(upper)) if lower == upper => Some(upper),
-            _ => None,
-        }
-    }
-}
-
-impl<'de> serde::Deserializer<'de> for MapDeserializer {
-    type Error = XmlError;
-
-    #[inline]
-    fn deserialize_any<V>(self, visitor: V) -> Result<V::Value>
-    where
-        V: Visitor<'de>,
-    {
-        visitor.visit_map(self)
-    }
-
-    forward_to_deserialize_any! {
-        bool i8 i16 i32 i64 u8 u16 u32 u64 f32 f64 char str string bytes
-        byte_buf option unit unit_struct newtype_struct seq tuple
-        tuple_struct map struct enum identifier ignored_any
-    }
-}
-
-struct EnumDeserializer {
-    variant: String,
-    value: Value,
-}
-
-impl<'de> EnumAccess<'de> for EnumDeserializer {
-    type Error = XmlError;
-    type Variant = Value;
-
-    fn variant_seed<V>(self, seed: V) -> Result<(V::Value, Value)>
-    where
-        V: DeserializeSeed<'de>,
-    {
-        let value = self.value;
-        let variant = Value::String(self.variant);
-        seed.deserialize(variant).map(|v| (v, value))
-    }
-}
 
 impl<'de> VariantAccess<'de> for Value {
     type Error = XmlError;
 
-    fn unit_variant(self) -> Result<()> {
-        if let Value::Struct(v) = self {
+    fn unit_variant(self) -> XmlResult<()> {
+        if let Value::Struct { member: v} = self {
             if !v.is_empty() {
                 return Err(serde::de::Error::invalid_value(
                     Unexpected::Map,
@@ -527,28 +18,30 @@ impl<'de> VariantAccess<'de> for Value {
             }
             Ok(())
         } else {
-            Err(serde::de::Error::invalid_value(
-                self.unexpected(),
-                &"empty map",
-            ))
+            // TODO: figure out about the unexpected(), but otherwise.
+            Err(XmlError::Format(super::FmtError::UnsupportedFormat("Empty map".to_owned())))
+            // Err(serde::de::Error::invalid_value(
+            //     self.unexpected(),
+            //     &"empty map",
+            // ))
         }
     }
 
-    fn newtype_variant_seed<T>(self, seed: T) -> Result<T::Value>
+    fn newtype_variant_seed<T>(self, seed: T) -> XmlResult<T::Value>
     where
         T: DeserializeSeed<'de>,
     {
         seed.deserialize(self)
     }
 
-    fn tuple_variant<V>(self, _len: usize, visitor: V) -> Result<V::Value>
+    fn tuple_variant<V>(self, _len: usize, visitor: V) -> XmlResult<V::Value>
     where
         V: Visitor<'de>,
     {
         self.deserialize_seq(visitor)
     }
 
-    fn struct_variant<V>(self, fields: &'static [&'static str], visitor: V) -> Result<V::Value>
+    fn struct_variant<V>(self, fields: &'static [&'static str], visitor: V) -> XmlResult<V::Value>
     where
         V: Visitor<'de>,
     {
@@ -556,7 +49,7 @@ impl<'de> VariantAccess<'de> for Value {
     }
 }
 
-trait FromI32 {
+pub(crate) trait FromI32 {
     fn from_i32(v: i32) -> Self;
 }
 
@@ -582,7 +75,7 @@ impl FromI32 for i64 {
     }
 }
 
-fn handle_integer<'de, T, V>(value: Value, visitor: &V) -> Result<T>
+pub(crate) fn handle_integer<'de, T, V>(value: Value, visitor: &V) -> XmlResult<T>
 where
     T: FromI32 + std::str::FromStr,
     V: Visitor<'de>,
@@ -592,13 +85,14 @@ where
         Value::String(v) => v
             .parse()
             .map_err(|_| serde::de::Error::invalid_value(Unexpected::Str(&v), visitor)),
-        _ => Err(serde::de::Error::invalid_value(value.unexpected(), visitor)),
+        _ => Err(XmlError::Format(FmtError::Decoding("Unexpected".to_owned())))
+            // _ => Err(serde::de::Error::invalid_value(value.unexpected(), visitor)),
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::xmlfmt::Value;
+    use crate::xmlfmt::{Member, Value};
     use serde::Deserialize;
     use serde_bytes;
     use std::collections::HashMap;
@@ -672,14 +166,14 @@ mod tests {
     #[test]
     fn reads_options_as_one_elem_or_empty_array() {
         let none: Option<i32> = None;
-        assert_eq!(none, Option::deserialize(Value::Array(Vec::new())).unwrap());
+        assert_eq!(none, Option::deserialize(Value::to_array(Vec::new())).unwrap());
         assert_eq!(
             Some(33i32),
-            Option::deserialize(Value::Array(vec![Value::Int(33)])).unwrap()
+            Option::deserialize(Value::to_array(vec![Value::Int(33)])).unwrap()
         );
         assert_eq!(
             Some(String::from("txt")),
-            Option::deserialize(Value::Array(vec![Value::String("txt".into())])).unwrap()
+            Option::deserialize(Value::to_array(vec![Value::String("txt".into())])).unwrap()
         );
     }
 
@@ -690,7 +184,7 @@ mod tests {
 
         assert_eq!(
             Helper,
-            Helper::deserialize(Value::Struct(HashMap::new())).unwrap()
+            Helper::deserialize(Value::Struct{ member: Box::new(Vec::new())}).unwrap()
         );
     }
 
@@ -715,7 +209,7 @@ mod tests {
     fn reads_vector_as_array() {
         assert_eq!(
             vec![33, 15, 44, 12],
-            Vec::<usize>::deserialize(Value::Array(vec![
+            Vec::<usize>::deserialize(Value::to_array(vec![
                 Value::Int(33),
                 Value::Int(15),
                 Value::Int(44),
@@ -725,7 +219,7 @@ mod tests {
         );
         assert_eq!(
             vec!['a', 'b', 'c', 'd'],
-            Vec::<char>::deserialize(Value::Array(vec![
+            Vec::<char>::deserialize(Value::to_array(vec![
                 Value::String("a".into()),
                 Value::String("b".into()),
                 Value::String("c".into()),
@@ -742,7 +236,7 @@ mod tests {
 
         assert_eq!(
             Helper(4, 1_000_000_000_000u64, "hello".into(), true),
-            Helper::deserialize(Value::Array(vec![
+            Helper::deserialize(Value::to_array(vec![
                 Value::Int(4),
                 Value::String("1000000000000".into()),
                 Value::String("hello".into()),
@@ -762,11 +256,12 @@ mod tests {
             qux: bool,
         }
 
-        let mut members = HashMap::new();
-        members.insert("foo".into(), Value::Int(4));
-        members.insert("bar".into(), Value::String("1000000000000".into()));
-        members.insert("baz".into(), Value::String("hello".into()));
-        members.insert("qux".into(), Value::Bool(true));
+        let members = vec![
+            Member::new("foo".to_owned(), Value::Int(4)),
+            Member::new("bar".to_owned(), Value::String("1000000000000".into())),
+            Member::new("baz".to_owned(), Value::String("hello".into())),
+            Member::new("qux".to_owned(), Value::Bool(true)),
+        ];
 
         assert_eq!(
             Helper {
@@ -775,29 +270,31 @@ mod tests {
                 baz: "hello".into(),
                 qux: true,
             },
-            Helper::deserialize(Value::Struct(members)).unwrap()
+            Helper::deserialize(Value::Struct{ member: Box::new(members) }).unwrap()
         );
     }
 
     #[test]
     fn reads_map_as_struct() {
-        let mut data = HashMap::new();
-        data.insert(String::from("foo"), vec![44i8, 12]);
-        data.insert(String::from("bar"), vec![]);
-        data.insert(String::from("baz"), vec![-3, 44, 28]);
+        let data = vec![
+            Member::new(String::from("foo"), Value::to_array(vec![Value::Int(44), Value::Int(12)])),
+            Member::new(String::from("bar"), Value::to_array(vec![])),
+            Member::new(String::from("baz"), Value::to_array(vec![Value::Int(-3), Value::Int(44), Value::Int(28)])),
+        ];
 
-        let mut members = HashMap::new();
-        members.insert(
-            "foo".into(),
-            Value::Array(vec![Value::Int(44), Value::Int(12)]),
-        );
-        members.insert("bar".into(), Value::Array(vec![]));
-        members.insert(
-            "baz".into(),
-            Value::Array(vec![Value::Int(-3), Value::Int(44), Value::Int(28)]),
-        );
+        let members = vec![
+            Member::new(
+                "foo".to_owned(),
+                Value::to_array(vec![Value::Int(44), Value::Int(12)]),
+            ),
+            Member::new("bar".to_owned(), Value::to_array(vec![])),
+            Member::new(
+                "baz".to_owned(),
+                Value::to_array(vec![Value::Int(-3), Value::Int(44), Value::Int(28)]),
+            )
+        ];
 
-        assert_eq!(data, HashMap::deserialize(Value::Struct(members)).unwrap());
+        assert_eq!(data, Vec::deserialize(Value::Struct{ member: Box::new(members) }).unwrap());
     }
 
     #[test]
@@ -807,39 +304,41 @@ mod tests {
         data.insert(String::from("bar"), vec![]);
         data.insert(String::from("baz"), vec![-3, 44, 28]);
 
-        let mut members = HashMap::new();
-        members.insert(
-            "foo".into(),
-            Value::Array(vec![Value::Int(44), Value::Int(12)]),
-        );
-        members.insert("bar".into(), Value::Array(vec![]));
-        members.insert(
-            "baz".into(),
-            Value::Array(vec![Value::Int(-3), Value::Int(44), Value::Int(28)]),
-        );
+        let members = vec![
+            Member::new(
+                "foo".to_string(),
+                Value::to_array(vec![Value::Int(44), Value::Int(12)]),
+            ),
+            Member::new("bar".to_owned(), Value::to_array(vec![])),
+            Member::new(
+                "baz".to_owned(),
+                Value::to_array(vec![Value::Int(-3), Value::Int(44), Value::Int(28)]),
+            )
+        ];
 
-        assert_eq!(data, HashMap::deserialize(Value::Struct(members)).unwrap());
+        assert_eq!(data, HashMap::deserialize(Value::Struct{ member: Box::new(members)}).unwrap());
     }
 
     #[test]
     fn map_accepts_integer_keys() {
         let mut data = HashMap::new();
-        data.insert(12, vec![44i8, 12]);
-        data.insert(-33, vec![]);
-        data.insert(44, vec![-3, 44, 28]);
+        data.insert("12".into(), vec![44i8, 12]);
+        data.insert("-33".to_owned(), vec![]);
+        data.insert("44".to_owned(), vec![-3, 44, 28]);
 
-        let mut members = HashMap::new();
-        members.insert(
-            "12".into(),
-            Value::Array(vec![Value::Int(44), Value::Int(12)]),
-        );
-        members.insert("-33".into(), Value::Array(vec![]));
-        members.insert(
-            "44".into(),
-            Value::Array(vec![Value::Int(-3), Value::Int(44), Value::Int(28)]),
-        );
+        let members = vec![
+            Member::new(
+                "12".to_owned(),
+                Value::to_array(vec![Value::Int(44), Value::Int(12)]),
+            ),
+            Member::new("-33".to_owned(), Value::to_array(vec![])),
+            Member::new(
+                "44".to_owned(),
+                Value::to_array(vec![Value::Int(-3), Value::Int(44), Value::Int(28)]),
+            ),
+        ];
 
-        assert_eq!(data, HashMap::deserialize(Value::Struct(members)).unwrap());
+        assert_eq!(data, HashMap::deserialize(Value::Struct{ member: Box::new(members) }).unwrap());
     }
 
     #[test]
@@ -849,18 +348,19 @@ mod tests {
         data.insert('b', vec![]);
         data.insert('c', vec![-3, 44, 28]);
 
-        let mut members = HashMap::new();
-        members.insert(
-            "a".into(),
-            Value::Array(vec![Value::Int(44), Value::Int(12)]),
-        );
-        members.insert("b".into(), Value::Array(vec![]));
-        members.insert(
-            "c".into(),
-            Value::Array(vec![Value::Int(-3), Value::Int(44), Value::Int(28)]),
-        );
+        let members = vec![
+            Member::new(
+                "a".to_owned(),
+                Value::to_array(vec![Value::Int(44), Value::Int(12)]),
+            ),
+            Member::new("b".to_owned(), Value::to_array(vec![])),
+            Member::new(
+                "c".to_owned(),
+                Value::to_array(vec![Value::Int(-3), Value::Int(44), Value::Int(28)]),
+            )
+        ];
 
-        assert_eq!(data, HashMap::deserialize(Value::Struct(members)).unwrap());
+        assert_eq!(data, HashMap::deserialize(Value::Struct{ member: Box::new(members) }).unwrap());
     }
 
     #[test]
@@ -869,14 +369,14 @@ mod tests {
         data.insert(true, vec![44i8, 12]);
         data.insert(false, vec![]);
 
-        let mut members = HashMap::new();
-        members.insert(
-            "true".into(),
-            Value::Array(vec![Value::Int(44), Value::Int(12)]),
-        );
-        members.insert("false".into(), Value::Array(vec![]));
-
-        assert_eq!(data, HashMap::deserialize(Value::Struct(members)).unwrap());
+        let members = vec![
+            Member::new(
+                "true".to_owned(),
+                Value::to_array(vec![Value::Int(44), Value::Int(12)]),
+            ),
+            Member::new("false".to_owned(), Value::to_array(vec![]))
+        ];
+        assert_eq!(data, HashMap::deserialize(Value::Struct{ member: Box::new(members) }).unwrap());
     }
 
     #[test]
@@ -889,49 +389,53 @@ mod tests {
             Qux { alpha: i32, beta: Vec<bool> },
         }
 
-        let mut members = HashMap::new();
-        members.insert("Foo".into(), Value::Struct(HashMap::new()));
+        let members = vec![
+            Member::new("Foo".to_owned(), Value::Struct{ member: Box::new(vec![])})
+        ];
         assert_eq!(
             Helper::Foo,
-            Helper::deserialize(Value::Struct(members)).unwrap()
+            Helper::deserialize(Value::Struct{ member: Box::new(members)}).unwrap()
         );
 
-        let mut members = HashMap::new();
-        members.insert("Bar".into(), Value::Int(44));
+        let members = vec![
+            Member::new("Bar".to_owned(), Value::Int(44))
+        ];
         assert_eq!(
             Helper::Bar(44),
-            Helper::deserialize(Value::Struct(members)).unwrap()
+            Helper::deserialize(Value::Struct{ member: Box::new(members)}).unwrap()
         );
 
-        let mut members = HashMap::new();
-        members.insert(
-            "Baz".into(),
-            Value::Array(vec![Value::Bool(false), Value::String("tsk".into())]),
-        );
+        let members = vec![
+        Member::new(
+            "Baz".to_owned(),
+            Value::to_array(vec![Value::Bool(false), Value::String("tsk".into())]),
+        )
+        ];
         assert_eq!(
             Helper::Baz(false, "tsk".into()),
-            Helper::deserialize(Value::Struct(members)).unwrap()
+            Helper::deserialize(Value::Struct{ member: Box::new(members)}).unwrap()
         );
 
-        let mut submembers = HashMap::new();
-        submembers.insert("alpha".into(), Value::Int(-4));
-        submembers.insert(
-            "beta".into(),
-            Value::Array(vec![
+        let submembers = vec![
+        Member::new("alpha".to_owned(), Value::Int(-4)),
+        Member::new(
+            "beta".to_owned(),
+            Value::to_array(vec![
                 Value::Bool(true),
                 Value::Bool(false),
                 Value::Bool(true),
-            ]),
-        );
+            ]))
+        ];
 
-        let mut members = HashMap::new();
-        members.insert("Qux".into(), Value::Struct(submembers));
+        let mut members = vec![
+            Member::new("Qux".to_owned(), Value::Struct{ member: Box::new(submembers)})
+        ];
         assert_eq!(
             Helper::Qux {
                 alpha: -4,
                 beta: vec![true, false, true],
             },
-            Helper::deserialize(Value::Struct(members)).unwrap()
+            Helper::deserialize(Value::Struct{ member: Box::new(members)}).unwrap()
         );
     }
 }
