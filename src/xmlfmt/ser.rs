@@ -87,7 +87,7 @@ impl serde::Serializer for Serializer {
     }
 
     fn serialize_unit(self) -> Result<Self::Ok, Self::Error> {
-        Ok(Value::Struct(Box::new(HashMap::new())))
+        Ok(Value::Struct{member: Box::new(vec![])})
     }
 
     fn serialize_unit_struct(self, _name: &'static str) -> Result<Self::Ok, Self::Error> {
@@ -100,9 +100,10 @@ impl serde::Serializer for Serializer {
         _variant_index: u32,
         variant: &'static str,
     ) -> Result<Self::Ok, Self::Error> {
-        let mut members = HashMap::new();
-        members.insert(variant.into(), self.serialize_unit()?);
-        Ok(Value::Struct(Box::new(members)))
+        let members = vec![
+            Member::new(variant.to_owned(), self.serialize_unit()?)
+        ];
+        Ok(Value::Struct{ member: Box::new(members)})
     }
 
     fn serialize_newtype_struct<T>(
@@ -126,9 +127,10 @@ impl serde::Serializer for Serializer {
     where
         T: Serialize + ?Sized,
     {
-        let mut members = HashMap::new();
-        members.insert(variant.into(), value.serialize(self)?);
-        Ok(Value::Struct(Box::new(members)))
+        let members = vec![
+            Member::new(variant.to_owned(), value.serialize(self)?)
+        ];
+        Ok(Value::Struct{ member: Box::new(members)})
     }
 
     fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq, Self::Error> {
@@ -505,7 +507,7 @@ mod tests {
     fn writes_units_as_empty_struct() {
         assert_eq!(
             ().serialize(Serializer {}).unwrap(),
-            Value::Struct(HashMap::new())
+            Value::Struct{ member: Box::new(vec![]) }
         );
 
         #[derive(Serialize)]
@@ -513,7 +515,7 @@ mod tests {
 
         assert_eq!(
             Helper.serialize(Serializer {}).unwrap(),
-            Value::Struct(HashMap::new())
+            Value::Struct{ member: Box::new(vec![]) }
         );
     }
 
@@ -600,12 +602,12 @@ mod tests {
             qux: bool,
         }
 
-        let mut members = HashMap::new();
-        members.insert("foo".into(), Value::Int(4));
-        members.insert("bar".into(), Value::String("1000000000000".into()));
-        members.insert("baz".into(), Value::String("hello".into()));
-        members.insert("qux".into(), Value::Bool(true));
-
+        let members = vec![
+            Member::new("foo".to_owned(), Value::Int(4)),
+            Member::new("bar".to_owned(), Value::String("1000000000000".into())),
+            Member::new("baz".to_owned(), Value::String("hello".into())),
+            Member::new("qux".to_owned(), Value::Bool(true)),
+        ];
         assert_eq!(
             Helper {
                 foo: 4,
@@ -615,7 +617,7 @@ mod tests {
             }
             .serialize(Serializer {})
             .unwrap(),
-            Value::Struct(members)
+            Value::Struct{ member: Box::new( members ) }
         );
     }
 
@@ -626,7 +628,7 @@ mod tests {
         data.insert("bar", vec![]);
         data.insert("baz", vec![-3, 44, 28]);
 
-        let mut members = HashMap::new();
+        let mut members: HashMap<String, Value> = HashMap::new();
         members.insert(
             "foo".into(),
             Value::to_array(vec![Value::Int(44), Value::Int(12)]),
@@ -636,10 +638,12 @@ mod tests {
             "baz".into(),
             Value::to_array(vec![Value::Int(-3), Value::Int(44), Value::Int(28)]),
         );
+        
+        let members = Member::from_hashmap(members);
 
         assert_eq!(
             data.serialize(Serializer {}).unwrap(),
-            Value::Struct(members)
+            Value::Struct{ member: Box::new(members) }
         );
     }
 
@@ -650,7 +654,7 @@ mod tests {
         data.insert(String::from("bar"), vec![]);
         data.insert(String::from("baz"), vec![-3, 44, 28]);
 
-        let mut members = HashMap::new();
+        let mut members: HashMap<String, Value> = HashMap::new();
         members.insert(
             "foo".into(),
             Value::to_array(vec![Value::Int(44), Value::Int(12)]),
@@ -661,9 +665,11 @@ mod tests {
             Value::to_array(vec![Value::Int(-3), Value::Int(44), Value::Int(28)]),
         );
 
+        let members = Member::from_hashmap(members);
+
         assert_eq!(
             data.serialize(Serializer {}).unwrap(),
-            Value::Struct(Box::new(members))
+            Value::Struct{ member: Box::new(members) }
         );
     }
 
@@ -674,7 +680,7 @@ mod tests {
         data.insert(-33, vec![]);
         data.insert(44, vec![-3, 44, 28]);
 
-        let mut members = HashMap::new();
+        let mut members: HashMap<String, Value> = HashMap::new();
         members.insert(
             "12".into(),
             Value::to_array(vec![Value::Int(44), Value::Int(12)]),
@@ -685,9 +691,11 @@ mod tests {
             Value::to_array(vec![Value::Int(-3), Value::Int(44), Value::Int(28)]),
         );
 
+        let members = Member::from_hashmap(members);
+
         assert_eq!(
             data.serialize(Serializer {}).unwrap(),
-            Value::Struct(members)
+            Value::Struct{ member: Box::new(members) }
         );
     }
 
@@ -698,7 +706,7 @@ mod tests {
         data.insert('b', vec![]);
         data.insert('c', vec![-3, 44, 28]);
 
-        let mut members = HashMap::new();
+        let mut members: HashMap<String, Value> = HashMap::new();
         members.insert(
             "a".into(),
             Value::to_array(vec![Value::Int(44), Value::Int(12)]),
@@ -708,10 +716,10 @@ mod tests {
             "c".into(),
             Value::to_array(vec![Value::Int(-3), Value::Int(44), Value::Int(28)]),
         );
-
+        let members = Member::from_hashmap(members);
         assert_eq!(
             data.serialize(Serializer {}).unwrap(),
-            Value::Struct(members)
+            Value::Struct{ member: Box::new(members) }
         );
     }
 
@@ -721,16 +729,16 @@ mod tests {
         data.insert(true, vec![44i8, 12]);
         data.insert(false, vec![]);
 
-        let mut members = HashMap::new();
+        let mut members: HashMap<String, Value> = HashMap::new();
         members.insert(
             "true".into(),
             Value::to_array(vec![Value::Int(44), Value::Int(12)]),
         );
         members.insert("false".into(), Value::to_array(vec![]));
-
+        let members = Member::from_hashmap(members);
         assert_eq!(
             data.serialize(Serializer {}).unwrap(),
-            Value::Struct(members)
+            Value::Struct{ member: Box::new(members)}
         );
     }
 
@@ -753,31 +761,34 @@ mod tests {
             Qux { alpha: i32, beta: Vec<bool> },
         }
 
-        let mut members = HashMap::new();
-        members.insert("Foo".into(), Value::Struct(HashMap::new()));
+        let mut members: HashMap<String, Value> = HashMap::new();
+        members.insert("Foo".into(), Value::Struct{ member: Box::new(vec![])});
+        let members = Member::from_hashmap(members);
         assert_eq!(
             Helper::Foo.serialize(Serializer {}).unwrap(),
-            Value::Struct(members)
+            Value::Struct{ member: Box::new(members) }
         );
 
-        let mut members = HashMap::new();
+        let mut members: HashMap<String, Value> = HashMap::new();
         members.insert("Bar".into(), Value::Int(44));
+        let members = Member::from_hashmap(members);
         assert_eq!(
             Helper::Bar(44).serialize(Serializer {}).unwrap(),
-            Value::Struct(members)
+            Value::Struct{ member: Box::new(members) }
         );
 
-        let mut members = HashMap::new();
+        let mut members: HashMap<String, Value> = HashMap::new();
         members.insert(
             "Baz".into(),
             Value::to_array(vec![Value::Bool(false), Value::String("tsk".into())]),
         );
+        let members = Member::from_hashmap(members);
         assert_eq!(
             Helper::Baz(false, "tsk").serialize(Serializer {}).unwrap(),
-            Value::Struct(members)
+            Value::Struct{ member: Box::new(members)}
         );
 
-        let mut submembers = HashMap::new();
+        let mut submembers: HashMap<String, Value> = HashMap::new();
         submembers.insert("alpha".into(), Value::Int(-4));
         submembers.insert(
             "beta".into(),
@@ -787,9 +798,10 @@ mod tests {
                 Value::Bool(true),
             ]),
         );
-
-        let mut members = HashMap::new();
-        members.insert("Qux".into(), Value::Struct(Box::new(submembers)));
+        let submembers = Member::from_hashmap(submembers);
+        let mut members: HashMap<String, Value> = HashMap::new();
+        members.insert("Qux".into(), Value::Struct{ member: Box::new(submembers)});
+        let members = Member::from_hashmap(members);
         assert_eq!(
             Helper::Qux {
                 alpha: -4,
@@ -797,7 +809,7 @@ mod tests {
             }
             .serialize(Serializer {})
             .unwrap(),
-            Value::Struct(members)
+            Value::Struct{ member: Box::new(members) }
         );
     }
 }

@@ -1,5 +1,5 @@
 use std::result::Result;
-use serde::{Serialize, Deserialize};
+use serde::Serialize;
 
 pub mod errors; // rust errors (local)
 pub mod params; // method response/call
@@ -19,7 +19,7 @@ pub(crate) mod to_xml; // may not be needed?
 pub use crate::xmlfmt::params::{Params, Param};
 pub use crate::xmlfmt::value::Value;
 pub use self::errors::{XmlError, FmtError, on_decode_fail, on_encode_fail};
-pub use self::response::XmlResponse;    
+pub use self::response::XmlResponse;
 // scope project only - used for client
 pub(crate) use self::to_xml::ToXml; 
 pub(crate) use self::response::MethodResponse;
@@ -30,16 +30,6 @@ use self::data::Data;
 pub(crate) use self::call::Call;
 
 pub type XmlResult<T> = Result<T, XmlError>;
-
-pub fn from_params<'a, T: Deserialize<'a>>(params: Params) -> XmlResult<T> {
-    let mut list: Vec<Value> = params.into();
-    let data = match list.len() {
-        0 => Value::String("".to_owned()),
-        1 => list.pop().unwrap(),   // TODO we really should handle this gracefully?
-        _ => Value::Array(Box::new(Data::new(list)))
-};
-    T::deserialize(data)
-}
 
 pub fn into_params<T: Serialize>(v: &T) -> XmlResult<Params> {
     let content = match v.serialize(ser::Serializer {}) ? {

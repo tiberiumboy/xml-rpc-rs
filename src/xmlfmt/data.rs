@@ -1,5 +1,7 @@
+use std::collections::hash_map::Iter;
+
 use serde::{Serialize, Deserialize};
-use crate::xmlfmt::Param;
+use crate::xmlfmt::{Value, Param};
 
 /*
     Used for Value::Array - Schema is detail as below:

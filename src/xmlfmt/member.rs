@@ -1,9 +1,10 @@
-use crate::Value;
+use crate::xmlfmt::Value;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /*
     The schematic for this is as listed below:
-    - commonly used for Value::Struct
+    - only used for Value::Struct
     ...
     <struct>
         <member>
@@ -31,5 +32,13 @@ impl Member {
             name: name.into(),
             value
         }
+    }
+
+    pub fn from_hashmap<'de, K: Into<String>, V: Deserialize<'de>>(hashmap: HashMap<K, V>) -> Vec<Member> {
+       hashmap.iter().fold(Vec::with_capacity(hashmap.capacity()), |mut list, (k, v)| {
+            let value = serde::deserialize::<Value>(v);
+            list.push(Member::new(k.into(),value));
+            list
+       })
     }
 }

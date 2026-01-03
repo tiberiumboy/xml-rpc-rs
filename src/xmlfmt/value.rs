@@ -1,8 +1,10 @@
 use serde::de::Unexpected;
-use serde::de::value::SeqDeserializer;
+use serde::de::value::{MapDeserializer, SeqDeserializer};
 use serde::{Serialize, Deserialize};
 use serde::de::Visitor;
-use crate::xmlfmt::{Member, Data, FmtError, Param, XmlError, XmlResult};
+use std::collections::HashMap;
+use serde_xml_rs::Deserializer;
+use crate::xmlfmt::{Data, FmtError, Member, Param, XmlError, XmlResult, into_params};
 use crate::xmlfmt::de::handle_integer;
 
 // TODO: Does serde_xml_rs handle box pointers? I'd like to run unit test on this one.
@@ -26,10 +28,25 @@ pub enum Value {
     },    
     Nil,    // translate this into <nil/>
 }
-
+    
 // This is considered as a "DataType"
 impl Value {
     
+    pub fn unexpected(&self) -> Unexpected {
+        match *self {
+            Value::I4(v) => Unexpected::Signed(i64::from(v)),
+            Value::Int(v) => Unexpected::Signed(i64::from(v)),
+            Value::Bool(v) => Unexpected::Bool(v),
+            Value::String(ref v) => Unexpected::Str(v),
+            Value::Double(v) => Unexpected::Float(v),
+            Value::DateTime(_) => Unexpected::Other("dateTime.iso8601"),
+            Value::Base64(ref v) => Unexpected::Bytes(v),
+            Value::Array(_) => Unexpected::Seq,
+            Value::Struct{ .. } => Unexpected::Map,
+            Value::Nil => Unexpected::Unit,
+        }
+    }
+
     pub fn fault<T>(code: i32, message: T ) -> Value
     where T: Into<String> {
         let members = vec![
@@ -42,7 +59,12 @@ impl Value {
     pub fn to_array(values: Param) -> Value {
         let data = Data::new(values);
         Value::Array(Box::new(data))
-    } 
+    }
+
+    pub fn to_struct(members: Vec<Member>) -> Value {
+        Value::Struct { member: Box::new(members)}
+    }
+
 }
 
 impl<'de> serde::Deserializer<'de> for Value {
@@ -62,7 +84,7 @@ impl<'de> serde::Deserializer<'de> for Value {
             Value::Array(v) => {
 
                 
-                let len = *v.len();
+                let len = Into::into(*v).len();
                 let mut deserializer = SeqDeserializer::new(v);
                 let seq = visitor.visit_seq(&mut deserializer)?;
                 // FIXME: this seems fishy?
@@ -77,9 +99,9 @@ impl<'de> serde::Deserializer<'de> for Value {
                 }
 
             }
-            Value::Struct(v) => {
-                let len = v.len();
-                let mut deserializer = MapDeserializer::new(v);
+            Value::Struct{ member } => {
+                let len = member.len();
+                let mut deserializer = MapDeserializer::new(member);
                 let map = visitor.visit_map(&mut deserializer)?;
                 let remaining = deserializer.iter.len();
                 if remaining == 0 {
@@ -91,6 +113,7 @@ impl<'de> serde::Deserializer<'de> for Value {
                     ))
                 }
             }
+            Value::Nil => visitor.visit_none()
         }
     }
 
@@ -193,7 +216,7 @@ impl<'de> serde::Deserializer<'de> for Value {
                     .map_err(|_| serde::de::Error::invalid_value(Unexpected::Str(&v), &visitor));
                 visitor.visit_f32(x?)
             }
-            _ => Err(serde::de::Error::invalid_value(self.unexpected(), &visitor)),
+            _ => Err(XmlError::Format(FmtError::UnsupportedFormat(self.unexpected()))),
         }
     }
 
@@ -417,6 +440,26 @@ impl<'de> serde::Deserializer<'de> for Value {
     }
 }
 
+impl<'se, T: Into<String>, S: Serialize> Into<Value> for HashMap<T, S> 
+    {
+        fn into(self) -> Value {
+            let members = self.iter().fold(
+                Vec::with_capacity(self.len()), 
+                |mut list, (key, val)| {                    
+                    match into_params(val) {
+                        Ok(param)=> {
+                            let value = Member::new(key.into(), );
+                            list.push(value);
+                        },
+                        Err(e) => {
+                            println!("Fail to insert values to table! Should not happen but unit test should catch this!");
+                        }
+                    }
+                    list
+            });
+            Value::Struct{ member: Box::new(members) }
+        }
+    }
 
 #[cfg(test)]
 mod tests {

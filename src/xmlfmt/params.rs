@@ -1,4 +1,5 @@
-use crate::{Value, xmlfmt::MethodResponse};
+use crate::xmlfmt::{Data, Value, MethodResponse, XmlResult};
+use serde::Deserialize;
 
 pub type Param = Vec<Value>;
 
@@ -13,26 +14,28 @@ impl Params {
     pub fn new( param: Param ) -> Self {
         Self { param }
     }
-    // TODO: Rename this function- "xmlfmt::from_params(params)" sounds confusing?
-/* 
-pub fn from_params<'a, T: Deserialize<'a>>(mut params: Params) -> XmlResult<T> {
-    // so we can create an empty array if the params is empty?
-    let data = match params.len() {
-        0 => {
-            Value::Array(Vec::new())
-        },
-        1 => params.pop().unwrap(),
-        _ => Value::Array(params),
-    };
 
-    T::deserialize(data).map_err(|e| {
-        errors::XmlError::Format(errors::FmtError::Decoding(format!(
-            "Failed to convert XML-RPC to structure. {}",
-            e
-        )))
-    })
+    pub fn from_params<'a, T: Deserialize<'a>>(self) -> XmlResult<T> {
+        // let mut list: Vec<Value> = self.into();
+        // let data = match list.len() {
+        //     0 => Value::String("".to_owned()),
+        //     1 => list.pop().unwrap(),   // TODO we really should handle this gracefully?
+        //     _ => Value::Array(Box::new(Data::new(list)))
+        // };
+        let data: Value = self.into();
+        T::deserialize(data)
+    }
 }
-*/
+
+// params are used as a 
+impl Into<Value> for Params {
+    fn into(mut self) -> Value {
+        match self.param.len() {
+            0 => Value::Nil,
+            1 => self.param.pop().unwrap(),
+            _ => Value::Array(Box::new(Data::new(self.param)))
+        }
+    }
 }
 
 impl Into<Param> for Params {
