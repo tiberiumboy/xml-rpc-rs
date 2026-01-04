@@ -4,8 +4,7 @@ use crate::xmlfmt::to_xml::ToXml;
 use crate::xmlfmt::{Call, Value, XmlResult, from_params, into_params, parse};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::io::Read;
-use std::io::Result as IoResult;
+use std::io::{Read as IoRead, Result as IoResult};
 use std::marker::PhantomData;
 use std::net::SocketAddrV4;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -61,11 +60,11 @@ impl<'a> Iterator for HeadersIter<'a> {
 ///
 /// In order to obtain this object, call `request.data()`.
 pub struct RequestBody<'a> {
-    body: Box<dyn Read + Send>,
+    body: Box<dyn IoRead + Send>,
     marker: PhantomData<&'a ()>,
 }
 
-impl<'a> Read for RequestBody<'a> {
+impl<'a> IoRead for RequestBody<'a> {
     #[inline]
     fn read(&mut self, buf: &mut [u8]) -> IoResult<usize> {
         self.body.read(buf)
