@@ -1,68 +1,40 @@
-use serde::{Deserialize, Serialize};
+use std::result::Result;
+use serde::Serialize;
 
-// TODO: How do I re-export as alias?
-pub mod alias;
+pub mod errors; // rust errors (local)
+pub mod params; // method response/call
+// DO not use parser - read the codeblock section near xmlvalue impl. @L94
+// pub mod parse;
+pub mod value;  // value type
+mod call;
+mod response;
+mod member;
+mod parse;
+mod data;
 
-pub mod call;
-mod de;
-pub mod error;
-pub mod fault;
-pub mod parse;
-mod ser;
-pub mod to_xml;
-pub mod value;
+pub(crate) mod ser;    // I need to bring this method back so that I can parse params correctly from any Deserialize input on client/server side.
+pub(crate) mod de;
+pub(crate) mod to_xml; // may not be needed?
 
-// pub mod xml; // FIXME: Doesn't seems to have a lot of info? It's being used for unit test.
+pub use crate::xmlfmt::params::{Params, Param};
+pub use crate::xmlfmt::value::Value;
+pub use self::errors::{XmlError, FmtError, on_decode_fail, on_encode_fail};
+pub use self::response::XmlResponse;
+// scope project only - used for client
+pub(crate) use self::to_xml::ToXml; 
+pub(crate) use self::response::MethodResponse;
+use self::member::Member;
+use self::data::Data;
 
-pub use self::call::Call;
-pub use self::fault::Fault;
-pub use self::value::{Params, Value};
+// interface point for making http request
+pub(crate) use self::call::Call;
 
-pub type XmlResult = Result<Params, Fault>;
+pub type XmlResult<T> = Result<T, XmlError>;
 
-pub fn from_params<'a, T: Deserialize<'a>>(mut params: Params) -> error::Result<T> {
-    let data = if params.len() == 1 {
-        params.pop().unwrap()
-    } else {
-        Value::Array(params)
+pub fn into_params<T: Serialize>(v: &T) -> XmlResult<Params> {
+    let content = match v.serialize(ser::Serializer {}) ? {
+        Value::Array(param) => Into::into(*param),
+        value => vec![value],
     };
-
-    T::deserialize(data).map_err(|e| {
-        error::XmlError::Format(error::FmtError::Decoding(format!(
-            "Failed to convert XML-RPC to structure. {}",
-            e
-        )))
-    })
-}
-
-pub fn into_params<T: Serialize>(v: &T) -> error::Result<Params> {
-    Ok(match v.serialize(ser::Serializer {})? {
-        Value::Array(params) => params,
-        data => vec![data],
-    })
-}
-
-#[cfg(test)]
-pub mod tests {
-    use super::*;
-
-    pub static BAD_DATA: &str = "Bad data provided";
-
-    pub fn ser_and_de_response_value(value: XmlResult) {
-        use crate::xmlfmt::to_xml::ToXml;
-        let data = value.to_xml();
-        let data = parse::response(data.as_bytes()).expect(BAD_DATA);
-        assert_eq!(value, data);
-    }
-
-    pub fn ser_and_de(value: Value) {
-        ser_and_de_response_value(Ok(vec![value]));
-    }
-
-    pub fn ser_and_de_call_value(value: Call) {
-        use crate::xmlfmt::to_xml::ToXml;
-        let data = value.to_xml();
-        let data = parse::call(data.as_bytes()).expect(BAD_DATA);
-        assert_eq!(value, data);
-    }
+    Ok(Params::new(content))
 }

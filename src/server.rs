@@ -1,8 +1,7 @@
-use crate::xmlfmt::error::{Result, XmlError};
-use crate::xmlfmt::fault::Fault;
-use crate::xmlfmt::to_xml::ToXml;
-use crate::xmlfmt::{Call, Value, XmlResult, from_params, into_params, parse};
+use crate::xmlfmt::ToXml;
+use crate::xmlfmt::{Param, ser, de, Params, Call, XmlError, Value, XmlResponse, MethodResponse, XmlResult, FmtError, on_decode_fail, on_encode_fail, from_params, into_params};
 use serde::{Deserialize, Serialize};
+// use ureq::http::response;
 use std::collections::HashMap;
 use std::io::{Read as IoRead, Result as IoResult};
 use std::marker::PhantomData;
@@ -13,27 +12,13 @@ use tiny_http::{Request, Response, Server as TinyHttpServer};
 
 // I need to provide a response back. - See if we can do this without async/mutex
 // TODO: Do we need send + Sync? Is async ideal? Thread safe? Mutex?
-type Handler = Box<dyn Fn(Vec<Value>) -> XmlResult + Send + Sync + 'static>;
+type Handler = Box<dyn Fn(Params) -> XmlResponse + Send + Sync + 'static>;
 type HandlerMap = HashMap<String, Handler>;
 
-pub fn on_decode_fail(err: &XmlError) -> XmlResult {
-    Err(Fault::new(
-        400,
-        format!("Failed to decode request: {}", err),
-    ))
-}
-
-pub fn on_encode_fail(err: &XmlError) -> XmlResult {
-    Err(Fault::new(
-        500,
-        format!("Failed to encode response: {}", err),
-    ))
-}
-
-// FIXME: May not be in used?
-#[allow(dead_code)]
-fn on_missing_method(_: Vec<Value>) -> XmlResult {
-    Err(Fault::new(404, "Requested method does not exist"))
+fn on_missing_method(e: Param) -> XmlResponse {
+    Err(
+        Value::fault(404, 
+            format!("Requested method does not exist: {:?}", e)))
 }
 
 /// Iterator to the list of headers in a request.
@@ -306,13 +291,12 @@ enum Executor {
 */
 
 // FIXME: Got lint warning complaining server and on_missing_method not in used.
-#[allow(dead_code)]
 pub struct Server {
     server: TinyHttpServer,
-    // handler: Arc<AssertUnwindSafe<F>>,
     // executor: Executor,
     handlers: HandlerMap,
-    // on_missing_method: Handler,
+    #[allow(dead_code)] // todo: find a way to use this?
+    on_missing_method: Handler,
 }
 
 impl Default for Server {
@@ -322,13 +306,13 @@ impl Default for Server {
         Self {
             server,
             handlers: HashMap::new(),
-            // on_missing_method: Box::new(on_missing_method),
+            on_missing_method: Box::new(|e| on_missing_method(e.into())),
         }
     }
 }
 
-impl Server /*<F>*/ {
-    pub fn new(port: u16) -> Result<Server> {
+impl Server {
+    pub fn new(port: u16) -> XmlResult<Server> {
         let localhost = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
         let server =
             TinyHttpServer::http(localhost).map_err(|e| XmlError::Server(e.to_string()))?;
@@ -336,19 +320,19 @@ impl Server /*<F>*/ {
         Ok(Self {
             server,
             handlers: HashMap::new(),
-            // on_missing_method: Box::new(on_missing_method),
+            on_missing_method: Box::new(|e| on_missing_method(e.into())),
         })
     }
 
-    pub fn register_value<K, T>(&mut self, name: K, handler: T)
+    pub(crate) fn register_value<K, T>(&mut self, name: K, handler: T)
     where
         K: Into<String>,
-        T: Fn(Vec<Value>) -> XmlResult + Send + Sync + 'static,
+        T: Fn(Params) -> XmlResponse + Send + Sync + 'static,
     {
         self.handlers.insert(name.into(), Box::new(handler));
     }
 
-    pub fn register<'a, K, Treq, Tres, Thandler, Tef, Tdf>(
+    pub fn register<'a, K, Treq, Thandler, Tef, Tdf>(
         &mut self,
         name: K,
         handler: Thandler,
@@ -357,12 +341,11 @@ impl Server /*<F>*/ {
     ) where
         K: Into<String>,
         Treq: Deserialize<'a>,
-        Tres: Serialize,
-        Thandler: Fn(Treq) -> std::result::Result<Tres, Fault> + Send + Sync + 'static,
-        Tef: Fn(&XmlError) -> XmlResult + Send + Sync + 'static,
-        Tdf: Fn(&XmlError) -> XmlResult + Send + Sync + 'static,
+        Thandler: Fn(Treq) -> XmlResponse + Send + Sync + 'static,
+        Tef: Fn(&XmlError) -> XmlResponse + Send + Sync + 'static,
+        Tdf: Fn(&XmlError) -> XmlResponse + Send + Sync + 'static,
     {
-        self.register_value(name, move |req| {
+        self.register_value(name.into(), move |req| {
             let params = match from_params(req) {
                 Ok(v) => v,
                 Err(err) => return decode_fail(&err),
@@ -376,28 +359,25 @@ impl Server /*<F>*/ {
     where
         K: Into<String>,
         Treq: Deserialize<'a>,
-        Tres: Serialize,
-        Thandler: Fn(Treq) -> std::result::Result<Tres, Fault> + Send + Sync + 'static,
+        Tres: serde::ser::Serialize,
+        Thandler: Fn(Treq) -> XmlResponse + Send + Sync + 'static,
     {
         self.register(name, handler, on_encode_fail, on_decode_fail);
     }
 
-    // pub fn set_on_missing<T>(&mut self, handler: T)
-    // where
-    //     T: Fn(Vec<Value>) -> Response + Send + Sync + 'static,
-    // {
-    //     self.on_missing_method = Box::new(handler);
-    // }
+    pub fn set_on_missing<T>(&mut self, handler: T)
+    where
+        T: Fn(Params) -> XmlResponse + Send + Sync + 'static,
+    {
+        self.on_missing_method = Box::new(handler);
+    }
 
-    // the request came from rouille, but rouille have dependency issues that needed to be resolved.
-    // find a substitution replacement and used it instead.
-    // FIXME: Got unused code here but is being used?
-    #[allow(dead_code)]
-    fn handle_outer(&self, request: &mut Request) -> XmlResult {
-        let call = match parse::call(request.as_reader()) {
+    // convert request into Call struct and invoke the method
+    fn handle_outer(&self, request: &mut Request) -> XmlResponse {
+        let call = match serde_xml_rs::from_reader(request.as_reader()) {
             Ok(data) => data,
-            Err(_err) => return Err(Fault::empty()),
-        };
+            Err(e) => Err(Value::fault(-1, e.to_string())),
+        }?;
 
         self.handle(call)
     }
@@ -406,34 +386,30 @@ impl Server /*<F>*/ {
     fn poll(&self) {
         // think there's already a transport we could use?
         for mut request in self.server.incoming_requests() {
-            let result = self.handle_outer(&mut request);
-            // with this xml result, we should find the handler that subscribe to this and invoke event
+            let result: XmlResponse = self.handle_outer(&mut request);            
+            
+            let reply = MethodResponse::new(result);
+            let content = match reply.to_xml() {
+                Ok(str) => str,
+                Err(val) => val.to_string(),
+            };
 
-            let response = Response::from_string(result.to_xml());
+            let response = Response::from_string(content);
             match request.respond(response) {
                 Ok(data) => println!("Successfully responded! {data:?}"),
                 Err(e) => println!("Fail to respond with this error message: {e:?}"),
             };
-
-            // TODO: What's the XML header consist of?
-            // how do we start reading the first element? How big is the first element?
-            // const HEADER_SIZE: usize = r#"<?xml version="1.0"?>"#.as_bytes().len();
-            // let mut header_buf = [0; HEADER_SIZE];
-            // match reader.read(&mut header_buf) {
-            //     Ok(size) =>
-            // }
         }
     }
 
-    /// This function is design to send a calling command to the client from the server.
+    /// Invoke subscribers matching handler names.
     /// Use this as a way to invoke methods or function on the python side of environment.
-    // TODO: Why is this method private? Where does handle get invoke from?
-    fn handle(&self, req: Call) -> XmlResult {
+    fn handle(&self, req: Call) -> XmlResponse {
         match self.handlers.get(&req.name) {
-            Some(v) => v(req.params),
-            None => Err(Fault::new(
+            Some(v) => v(req.params.into()),
+            None => Err(Value::fault(
                 -1,
-                format!("No handlers found for {}", &req.name),
+                format!("No handlers found for {}! Please register first!", &req.name),
             )),
         }
     }

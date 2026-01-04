@@ -1,31 +1,45 @@
+/* 
+
+use crate::XmlResponse;
 use crate::xmlfmt::error::FmtError;
-use crate::xmlfmt::error::{Result, XmlError};
+use crate::xmlfmt::error::XmlError;
+use crate::xmlfmt::Params;
+use crate::xmlfmt::value::StructItem;
 use crate::xmlfmt::{Call, Fault, Value, XmlResult};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use regex::Regex;
+use serde::Deserialize; // , Deserializer
 use std;
 use std::collections::HashMap;
 use std::io::Read as IoRead;
 
-fn wrap_in_string(content: String) -> String {
-    lazy_static! {
-        static ref RE1: Regex = Regex::new(r"<value\s*/>").unwrap();
-        static ref RE2: Regex = Regex::new(r"<value\s*>\s*<string\s*/>\s*</value\s*>").unwrap();
-        static ref RE3: Regex = Regex::new(r"<value\s*>(?P<rest>[^<>]*)</value\s*>").unwrap();
-    }
-    RE3.replace_all(
-        &RE2.replace_all(
-            &RE1.replace_all(&content, "<value><string></string></value>"),
-            "<value><string></string></value>",
-        ),
-        "<value><string>$rest</string></value>",
-    )
-    .into()
-}
+*/
+
+// TODO: Perform unit test on this? I'm not quite confident to understand what this function does with three regular expressions?
+// I get what it replaces, but I think there's a better way to get around this without using regex. Consider stream?
+// fn wrap_in_string(content: String) -> String {
+//     lazy_static! {
+//         static ref RE1: Regex = Regex::new(r"<value\s*/>").unwrap();
+//         static ref RE2: Regex = Regex::new(r"<value\s*>\s*<string\s*/>\s*</value\s*>").unwrap();
+//         static ref RE3: Regex = Regex::new(r"<value\s*>(?P<rest>[^<>]*)</value\s*>").unwrap();
+//     }
+//     // I'm legitimately confused about this`` operation here?
+//     RE3.replace_all(
+//         &RE2.replace_all(
+//             &RE1.replace_all(&content, "<value><string></string></value>"),
+//             "<value><string></string></value>",
+//         ),
+//         "<value><string>$rest</string></value>",
+//     )
+//     .into()
+// }
+
+/*
 
 // FIXME: Unused code but is being used for unit test...
 #[allow(dead_code)]
-pub fn xml<T: IoRead>(mut r: T) -> Result<Value> {
+pub fn xml<T: IoRead>(mut r: T) -> XmlResult<Value> {
+    // TODO: Stream parse this instead of using string?
     let mut content = String::new();
     r.read_to_string(&mut content).map_err(|e| {
         XmlError::Format(FmtError::Decoding(format!(
@@ -33,16 +47,21 @@ pub fn xml<T: IoRead>(mut r: T) -> Result<Value> {
             e
         )))
     })?;
-    let data: XmlValue = serde_xml_rs::from_str(&wrap_in_string(content)).map_err(|e| {
+    
+    // let format_content = &wrap_in_string(content);
+    let format_content = content;
+    println!("XML Content: {}", &format_content);
+    
+    // Ok.. wtf is this? 
+    serde_xml_rs::from_str::<Value>(&format_content).map_err(|e| {
         XmlError::Format(FmtError::Decoding(format!(
             "Failed to parse XML-RPC data.{:?}",
             e
         )))
-    })?;
-    data.into()
+    })
 }
 
-pub fn call<T: IoRead>(mut r: T) -> Result<Call> {
+pub fn call<T: IoRead>(mut r: T) -> XmlResult<Call> {
     let mut content = String::new();
     r.read_to_string(&mut content).map_err(|e| {
         XmlError::Format(FmtError::Decoding(format!(
@@ -59,7 +78,8 @@ pub fn call<T: IoRead>(mut r: T) -> Result<Call> {
     data.into()
 }
 
-pub fn response<T: IoRead>(mut r: T) -> Result<XmlResult> {
+
+pub fn response<T: IoRead>(mut r: T) -> XmlResult<XmlResponse> {
     let mut content = String::new();
     r.read_to_string(&mut content).map_err(|e| {
         XmlError::Format(FmtError::Decoding(format!(
@@ -73,9 +93,19 @@ pub fn response<T: IoRead>(mut r: T) -> Result<XmlResult> {
             e
         )))
     })?;
-    data.into()
+    Ok(data)
 }
+*/
 
+/* 
+
+    Please read:
+    This commented section contains code that was used to parse xml string from some formatted data back into true "value" (minus the xml prefix).
+    Instead of creating duplicated copy of the class, I would like to know why this codebase branch off to handle both conditions separately.
+    If they cannot function the same from the original class, then there needs to be a restructuring in the code architecture to make sure we avoid code duplication.
+
+    Please implement in the "true" object class (Minus the prefix "xml") necessary function instead.
+    
 #[derive(Debug, PartialEq, Deserialize)]
 enum XmlValue {
     #[serde(rename = "i4")]
@@ -98,7 +128,7 @@ enum XmlValue {
     Struct(XmlStruct),
 }
 
-impl From<XmlValue> for Result<Value> {
+impl From<XmlValue> for XmlResult<Value> {
     fn from(val: XmlValue) -> Self {
         Ok(match val {
             XmlValue::I4(v) | XmlValue::Int(v) => Value::Int(v),
@@ -118,12 +148,11 @@ impl From<XmlValue> for Result<Value> {
                 )))
             })?),
             XmlValue::Array(v) => {
-                let items: Result<Vec<Value>> = v.into();
+                let items: XmlResult<Params> = v.into();
                 Value::Array(items?)
             }
             XmlValue::Struct(v) => {
-                let items: Result<HashMap<String, Value>> = v.into();
-                Value::Struct(items?)
+                Value::Struct(v.into)
             }
         })
     }
@@ -137,9 +166,9 @@ struct XmlCall {
     pub params: XmlParams,
 }
 
-impl From<XmlCall> for Result<Call> {
+impl From<XmlCall> for XmlResult<Call> {
     fn from(val: XmlCall) -> Self {
-        let params: Result<Vec<Value>> = val.params.into();
+        let params: XmlResult<Params> = val.params.into();
         Ok(Call {
             name: val.name,
             params: params?,
@@ -147,6 +176,7 @@ impl From<XmlCall> for Result<Call> {
     }
 }
 
+/*
 #[derive(Debug, PartialEq, Deserialize)]
 enum XmlResponseResult {
     #[serde(rename = "params")]
@@ -155,24 +185,24 @@ enum XmlResponseResult {
     Failure { value: XmlValue },
 }
 
-impl From<XmlResponseResult> for Result<XmlResult> {
+impl From<XmlResponseResult> for XmlResult<XmlResponse> {
     fn from(val: XmlResponseResult) -> Self {
         match val {
             XmlResponseResult::Success(params) => {
-                let params: Result<Vec<Value>> = params.into();
-                Ok(Ok(params?))
+                let params: XmlResult<Vec<Value>> = params.into();
+                Ok(params?)
             }
             XmlResponseResult::Failure { value: v } => {
                 use serde::Deserialize;
 
-                let val: Result<Value> = v.into();
+                let val: XmlResult<Value> = v.into();
 
-                Ok(Err(Fault::deserialize(val?).map_err(|e| {
+                Ok(Fault::deserialize(val?).map_err(|e| {
                     XmlError::Format(FmtError::Decoding(format!(
                         "Failed to decode fault structure: {}",
                         e
                     )))
-                })?))
+                })?)
             }
         }
     }
@@ -184,13 +214,14 @@ enum XmlResponse {
     Response(XmlResponseResult),
 }
 
-impl From<XmlResponse> for Result<XmlResult> {
+impl From<XmlResponse> for XmlResult<XmlResponse> {
     fn from(val: XmlResponse) -> Self {
         match val {
             XmlResponse::Response(v) => v.into(),
         }
     }
 }
+ */
 
 #[derive(Debug, PartialEq, Deserialize)]
 struct XmlParams {
@@ -198,7 +229,7 @@ struct XmlParams {
     pub params: Vec<XmlParamData>,
 }
 
-impl From<XmlParams> for Result<Vec<Value>> {
+impl From<XmlParams> for XmlResult<Vec<Value>> {
     fn from(val: XmlParams) -> Self {
         val.params
             .into_iter()
@@ -212,7 +243,7 @@ struct XmlParamData {
     pub value: XmlValue,
 }
 
-impl From<XmlParamData> for Result<Value> {
+impl From<XmlParamData> for XmlResult<Value> {
     fn from(val: XmlParamData) -> Self {
         val.value.into()
     }
@@ -224,7 +255,7 @@ struct XmlArray {
     pub data: XmlArrayData,
 }
 
-impl From<XmlArray> for Result<Vec<Value>> {
+impl From<XmlArray> for XmlResult<Vec<Value>> {
     fn from(val: XmlArray) -> Self {
         val.data.into()
     }
@@ -236,11 +267,11 @@ struct XmlArrayData {
     pub value: Vec<XmlValue>,
 }
 
-impl From<XmlArrayData> for Result<Vec<Value>> {
+impl From<XmlArrayData> for XmlResult<Vec<Value>> {
     fn from(val: XmlArrayData) -> Self {
         val.value
             .into_iter()
-            .map(Into::<Result<Value>>::into)
+            .map(Into::<XmlResult<Value>>::into)
             .collect()
     }
 }
@@ -251,7 +282,7 @@ struct XmlStruct {
     pub members: Vec<XmlStructItem>,
 }
 
-impl From<XmlStruct> for Result<HashMap<String, Value>> {
+impl From<XmlStruct> for XmlResult<XmlStructItem> {
     fn from(val: XmlStruct) -> Self {
         val.members
             .into_iter()
@@ -266,7 +297,7 @@ struct XmlStructItem {
     pub value: XmlValue,
 }
 
-impl From<XmlStructItem> for Result<(String, Value)> {
+impl From<XmlStructItem> for XmlResult<(String, Value)> {
     fn from(val: XmlStructItem) -> Self {
         let value: Result<Value> = val.value.into();
         Ok((val.name, value?))
@@ -332,7 +363,8 @@ mod tests {
 
     #[test]
     fn reads_array_xml_value() {
-        let data = r#"<?xml version="1.0"?>
+        // <?xml version="1.0"?>
+        let data = r#"
 <array>
     <data>
         <value><i4>33</i4></value>
@@ -523,3 +555,5 @@ mod tests {
         tests::ser_and_de_response_value(Ok(vec![]))
     }
 }
+
+*/

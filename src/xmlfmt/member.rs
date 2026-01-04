@@ -1,0 +1,44 @@
+use crate::xmlfmt::Value;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+/*
+    The schematic for this is as listed below:
+    - only used for Value::Struct
+    ...
+    <struct>
+        <member>
+            <name/>
+            <value/>
+        </member>
+        <member>
+            ...
+        </member>
+    </struct>
+*/
+#[derive(PartialEq, Clone, Serialize, Deserialize)]
+#[serde(rename_all="camelCase")]
+// #[cfg(Debug)]
+#[derive(Debug)]
+pub(crate) struct Member{
+    name: String, 
+    value: Value
+}
+
+impl Member {
+    pub fn new<T>(name: T, value: Value ) -> Self
+    where T: Into<String> {
+        Self {
+            name: name.into(),
+            value
+        }
+    }
+
+    pub fn from_hashmap<'de, K: Into<String>, V: Deserialize<'de>>(hashmap: HashMap<K, V>) -> Vec<Member> {
+       hashmap.iter().fold(Vec::with_capacity(hashmap.capacity()), |mut list, (k, v)| {
+            let value = serde::deserialize::<Value>(v);
+            list.push(Member::new(k.into(),value));
+            list
+       })
+    }
+}
