@@ -1,20 +1,6 @@
-use serde::{ser, de, Deserialize, Serialize};
-use crate::xmlfmt::{Value, XmlResponse, FmtError};
+use crate::xmlfmt::FmtError;
+use serde::{Deserialize, Serialize, de, ser};
 use std::fmt;
-
-pub fn on_decode_fail(err: &XmlError) -> XmlResponse {
-    Err(Value::fault(
-        400,
-        format!("Failed to decode request: {}", err),
-    ))
-}
-
-pub fn on_encode_fail(err: &XmlError) -> XmlResponse {
-    Err(Value::fault(
-        500,
-        format!("Failed to encode response: {}", err),
-    ))
-}
 
 // TODO: Find another way to handle decode/encode without string arguments.
 #[derive(Debug, Serialize, Deserialize)]

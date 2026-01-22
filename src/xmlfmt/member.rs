@@ -17,28 +17,32 @@ use std::collections::HashMap;
     </struct>
 */
 #[derive(PartialEq, Clone, Serialize, Deserialize)]
-#[serde(rename_all="camelCase")]
+#[serde(rename_all = "camelCase")]
 // #[cfg(Debug)]
 #[derive(Debug)]
-pub(crate) struct Member{
-    name: String, 
-    value: Value
+pub struct Member {
+    name: String,
+    value: Value,
 }
 
 impl Member {
-    pub fn new<T>(name: T, value: Value ) -> Self
-    where T: Into<String> {
+    pub fn new<T>(name: T, value: Value) -> Self
+    where
+        T: Into<String>,
+    {
         Self {
             name: name.into(),
-            value
+            value,
         }
     }
 
-    pub fn from_hashmap<'de, K: Into<String>, V: Deserialize<'de>>(hashmap: HashMap<K, V>) -> Vec<Member> {
-       hashmap.iter().fold(Vec::with_capacity(hashmap.capacity()), |mut list, (k, v)| {
-            let value = serde::deserialize::<Value>(v);
-            list.push(Member::new(k.into(),value));
-            list
-       })
+    pub fn from_hashmap(hashmap: HashMap<String, Value>) -> Vec<Member> {
+        hashmap.iter().fold(
+            Vec::with_capacity(hashmap.capacity()),
+            |mut list, (k, v)| {
+                list.push(Member::new(k, v.clone()));
+                list
+            },
+        )
     }
 }

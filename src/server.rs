@@ -1,6 +1,15 @@
 use crate::xmlfmt::ToXml;
-use crate::xmlfmt::{Param, ser, de, Params, Call, XmlError, Value, XmlResponse, MethodResponse, XmlResult, FmtError, on_decode_fail, on_encode_fail, from_params, into_params};
-use serde::{Deserialize, Serialize};
+use crate::xmlfmt::{
+    Call,
+    MethodResponse,
+    Params,
+    Value,
+    XmlError,
+    XmlResponse,
+    XmlResult,
+    // de,FmtError, into_params, on_decode_fail, on_encode_fail, ser,
+};
+// use serde::{Deserialize, Serialize};
 // use ureq::http::response;
 use std::collections::HashMap;
 use std::io::{Read as IoRead, Result as IoResult};
@@ -12,14 +21,8 @@ use tiny_http::{Request, Response, Server as TinyHttpServer};
 
 // I need to provide a response back. - See if we can do this without async/mutex
 // TODO: Do we need send + Sync? Is async ideal? Thread safe? Mutex?
-type Handler = Box<dyn Fn(Params) -> XmlResponse + Send + Sync + 'static>;
+type Handler = Box<dyn Fn(Params) -> XmlResponse>;
 type HandlerMap = HashMap<String, Handler>;
-
-fn on_missing_method(e: Param) -> XmlResponse {
-    Err(
-        Value::fault(404, 
-            format!("Requested method does not exist: {:?}", e)))
-}
 
 /// Iterator to the list of headers in a request.
 #[derive(Debug, Clone)]
@@ -293,10 +296,7 @@ enum Executor {
 // FIXME: Got lint warning complaining server and on_missing_method not in used.
 pub struct Server {
     server: TinyHttpServer,
-    // executor: Executor,
     handlers: HandlerMap,
-    #[allow(dead_code)] // todo: find a way to use this?
-    on_missing_method: Handler,
 }
 
 impl Default for Server {
@@ -306,7 +306,6 @@ impl Default for Server {
         Self {
             server,
             handlers: HashMap::new(),
-            on_missing_method: Box::new(|e| on_missing_method(e.into())),
         }
     }
 }
@@ -320,56 +319,24 @@ impl Server {
         Ok(Self {
             server,
             handlers: HashMap::new(),
-            on_missing_method: Box::new(|e| on_missing_method(e.into())),
         })
     }
 
-    pub(crate) fn register_value<K, T>(&mut self, name: K, handler: T)
-    where
-        K: Into<String>,
-        T: Fn(Params) -> XmlResponse + Send + Sync + 'static,
-    {
-        self.handlers.insert(name.into(), Box::new(handler));
-    }
-
-    pub fn register<'a, K, Treq, Thandler, Tef, Tdf>(
-        &mut self,
-        name: K,
-        handler: Thandler,
-        encode_fail: Tef,
-        decode_fail: Tdf,
-    ) where
-        K: Into<String>,
-        Treq: Deserialize<'a>,
-        Thandler: Fn(Treq) -> XmlResponse + Send + Sync + 'static,
-        Tef: Fn(&XmlError) -> XmlResponse + Send + Sync + 'static,
-        Tdf: Fn(&XmlError) -> XmlResponse + Send + Sync + 'static,
-    {
-        self.register_value(name.into(), move |req| {
-            let params = match from_params(req) {
-                Ok(v) => v,
-                Err(err) => return decode_fail(&err),
-            };
-            let response = handler(params)?;
-            into_params(&response).or_else(|v| encode_fail(&v))
-        });
-    }
-
-    pub fn register_simple<'a, K, Treq, Tres, Thandler>(&mut self, name: K, handler: Thandler)
-    where
-        K: Into<String>,
-        Treq: Deserialize<'a>,
-        Tres: serde::ser::Serialize,
-        Thandler: Fn(Treq) -> XmlResponse + Send + Sync + 'static,
-    {
-        self.register(name, handler, on_encode_fail, on_decode_fail);
-    }
-
-    pub fn set_on_missing<T>(&mut self, handler: T)
-    where
-        T: Fn(Params) -> XmlResponse + Send + Sync + 'static,
-    {
-        self.on_missing_method = Box::new(handler);
+    pub fn register(&mut self, name: String, handler: Handler) {
+        // the move closure receives a MethodCall and parse into Params.
+        // The params contains data from the caller, that can be used in the arguments below.
+        // self.register_value(name, move |req| {
+        //     // let result = match from_params(params) {
+        //     //     Ok(v) => v,
+        //     //     Err(err) => return decode_fail(&err),
+        //     // };
+        //     let call = Call::new(name, req);
+        //     let response = self.handle(call);
+        //     self.handlers.insert(k, v)
+        //     // handler(params)?;
+        //     into_params(&response).or_else(|v| encode_fail(&v))
+        // });
+        self.handlers.insert(name, handler);
     }
 
     // convert request into Call struct and invoke the method
@@ -386,8 +353,8 @@ impl Server {
     fn poll(&self) {
         // think there's already a transport we could use?
         for mut request in self.server.incoming_requests() {
-            let result: XmlResponse = self.handle_outer(&mut request);            
-            
+            let result: XmlResponse = self.handle_outer(&mut request);
+
             let reply = MethodResponse::new(result);
             let content = match reply.to_xml() {
                 Ok(str) => str,
@@ -409,7 +376,10 @@ impl Server {
             Some(v) => v(req.params.into()),
             None => Err(Value::fault(
                 -1,
-                format!("No handlers found for {}! Please register first!", &req.name),
+                format!(
+                    "No handlers found for {}! Please register first!",
+                    &req.name
+                ),
             )),
         }
     }

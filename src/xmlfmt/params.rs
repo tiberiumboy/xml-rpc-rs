@@ -1,4 +1,4 @@
-use crate::xmlfmt::{Data, Value, MethodResponse, XmlResult};
+use crate::xmlfmt::{Data, MethodResponse, Value};
 use serde::Deserialize;
 
 pub type Param = Vec<Value>;
@@ -10,30 +10,29 @@ pub struct Params {
 }
 
 impl Params {
-    
-    pub fn new( param: Param ) -> Self {
+    pub fn new(param: Param) -> Self {
         Self { param }
     }
 
-    pub fn from_params<'a, T: Deserialize<'a>>(self) -> XmlResult<T> {
-        // let mut list: Vec<Value> = self.into();
-        // let data = match list.len() {
-        //     0 => Value::String("".to_owned()),
-        //     1 => list.pop().unwrap(),   // TODO we really should handle this gracefully?
-        //     _ => Value::Array(Box::new(Data::new(list)))
-        // };
-        let data: Value = self.into();
-        T::deserialize(data)
-    }
+    //     pub fn from_params<'a, T: Deserialize<'a>>(self) -> XmlResult<T> {
+    //         // let mut list: Vec<Value> = self.into();
+    //         // let data = match list.len() {
+    //         //     0 => Value::String("".to_owned()),
+    //         //     1 => list.pop().unwrap(),   // TODO we really should handle this gracefully?
+    //         //     _ => Value::Array(Box::new(Data::new(list)))
+    //         // };
+    //         let data: Value = self.into();
+    //         T::deserialize(data)
+    //     }
 }
 
-// params are used as a 
+// params are used as a
 impl Into<Value> for Params {
     fn into(mut self) -> Value {
         match self.param.len() {
             0 => Value::Nil,
             1 => self.param.pop().unwrap(),
-            _ => Value::Array(Box::new(Data::new(self.param)))
+            _ => Value::Array(Box::new(Data::new(self.param))),
         }
     }
 }

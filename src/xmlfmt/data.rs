@@ -1,7 +1,5 @@
-use std::collections::hash_map::Iter;
-
-use serde::{Serialize, Deserialize};
-use crate::xmlfmt::{Value, Param};
+use crate::xmlfmt::Param;
+use serde::{Deserialize, Serialize};
 
 /*
     Used for Value::Array - Schema is detail as below:
@@ -17,9 +15,9 @@ use crate::xmlfmt::{Value, Param};
 #[derive(Serialize, Deserialize, PartialEq, Clone)]
 // #[cfg!(Debug)]
 #[derive(Debug)]
-#[serde(rename_all="camelCase")]
-pub(crate) struct Data {
-    value: Param
+#[serde(rename_all = "camelCase")]
+pub struct Data {
+    value: Param,
 }
 
 impl Data {

@@ -1,37 +1,31 @@
+use crate::xmlfmt::{Data, Member, Param};
 use serde::de::Unexpected;
-use serde::de::value::{MapDeserializer, SeqDeserializer};
-use serde::{Serialize, Deserialize};
-use serde::de::Visitor;
-use std::collections::HashMap;
-use serde_xml_rs::Deserializer;
-use crate::xmlfmt::{Data, FmtError, Member, Param, XmlError, XmlResult, into_params};
-use crate::xmlfmt::de::handle_integer;
+use serde::{Deserialize, Serialize};
 
 // TODO: Does serde_xml_rs handle box pointers? I'd like to run unit test on this one.
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
-#[serde(rename_all="camelCase")]
+#[serde(rename_all = "camelCase")]
 pub enum Value {
     I4(i32), // What's the difference between this and the latter? According to XmlValue, there's a distinguish between two?
     Int(i32),
     Bool(bool),
     String(String),
     Double(f64),
-    #[serde(rename="dateTime.iso8601")]
+    #[serde(rename = "dateTime.iso8601")]
     // TODO: See if we can store DateTime true value instead of string, see if the serde_xml_rs parser parse it correctly?
-    DateTime(String),   // TODO: figure out how to parse this into ISO 8601 format and back
+    DateTime(String), // TODO: figure out how to parse this into ISO 8601 format and back
     Base64(Vec<u8>),
     // Using box pointer to avoid infinite recursive loop of Array -> Data -> value -> Array...
     Array(Box<Data>),
     // Using box pointer to avoid infinite recursive loop of Value -> Struct -> Member -> value
-    Struct { 
-        member: Box<Vec<Member>> 
-    },    
-    Nil,    // translate this into <nil/>
+    Struct {
+        member: Box<Vec<Member>>,
+    },
+    Nil, // translate this into <nil/>
 }
-    
+
 // This is considered as a "DataType"
 impl Value {
-    
     pub fn unexpected(&self) -> Unexpected {
         match *self {
             Value::I4(v) => Unexpected::Signed(i64::from(v)),
@@ -42,18 +36,22 @@ impl Value {
             Value::DateTime(_) => Unexpected::Other("dateTime.iso8601"),
             Value::Base64(ref v) => Unexpected::Bytes(v),
             Value::Array(_) => Unexpected::Seq,
-            Value::Struct{ .. } => Unexpected::Map,
+            Value::Struct { .. } => Unexpected::Map,
             Value::Nil => Unexpected::Unit,
         }
     }
 
-    pub fn fault<T>(code: i32, message: T ) -> Value
-    where T: Into<String> {
+    pub fn fault<T>(code: i32, message: T) -> Value
+    where
+        T: Into<String>,
+    {
         let members = vec![
             Member::new("faultCode".to_owned(), Value::Int(code)),
-            Member::new("faultString".to_owned(), Value::String(message.into()))
+            Member::new("faultString".to_owned(), Value::String(message.into())),
         ];
-        Value::Struct { member: Box::new(members) }
+        Value::Struct {
+            member: Box::new(members),
+        }
     }
 
     pub fn to_array(values: Param) -> Value {
@@ -62,11 +60,13 @@ impl Value {
     }
 
     pub fn to_struct(members: Vec<Member>) -> Value {
-        Value::Struct { member: Box::new(members)}
+        Value::Struct {
+            member: Box::new(members),
+        }
     }
-
 }
 
+/*
 impl<'de> serde::Deserializer<'de> for Value {
     type Error = XmlError;
 
@@ -83,12 +83,12 @@ impl<'de> serde::Deserializer<'de> for Value {
             Value::Base64(v) => visitor.visit_bytes(v.as_slice()),
             Value::Array(v) => {
 
-                
+
                 let len = Into::into(*v).len();
                 let mut deserializer = SeqDeserializer::new(v);
                 let seq = visitor.visit_seq(&mut deserializer)?;
                 // FIXME: this seems fishy?
-                let remaining = deserializer.iter.len();    
+                let remaining = deserializer.iter.len();
                 if remaining == 0 {
                     Ok(seq)
                 } else {
@@ -126,7 +126,7 @@ impl<'de> serde::Deserializer<'de> for Value {
             Value::String(v) => match v.as_str() {
                 "true" => visitor.visit_bool(true),
                 "false" => visitor.visit_bool(false),
-                _ => Err( 
+                _ => Err(
                     XmlError::Format(
                         FmtError::Decoding(
                             format!("Cannot deserialize into bool from \"{v}\"")))
@@ -400,7 +400,7 @@ impl<'de> serde::Deserializer<'de> for Value {
     {
         self.deserialize_any(visitor)
     }
-    
+
 
     fn deserialize_enum<V>(
         self,
@@ -434,41 +434,43 @@ impl<'de> serde::Deserializer<'de> for Value {
         }
     }
 
-    
+
     forward_to_deserialize_any! {
         identifier ignored_any
     }
 }
 
-impl<'se, T: Into<String>, S: Serialize> Into<Value> for HashMap<T, S> 
-    {
-        fn into(self) -> Value {
-            let members = self.iter().fold(
-                Vec::with_capacity(self.len()), 
-                |mut list, (key, val)| {                    
-                    match into_params(val) {
-                        Ok(param)=> {
-                            let value = Member::new(key.into(), );
-                            list.push(value);
-                        },
-                        Err(e) => {
-                            println!("Fail to insert values to table! Should not happen but unit test should catch this!");
-                        }
-                    }
-                    list
-            });
-            Value::Struct{ member: Box::new(members) }
-        }
-    }
+     */
+
+// impl<'se, T: Into<String>, S: Serialize> Into<Value> for HashMap<T, S>
+//     {
+//         fn into(self) -> Value {
+//             let members = self.iter().fold(
+//                 Vec::with_capacity(self.len()),
+//                 |mut list, (key, val)| {
+//                     match into_params(val) {
+//                         Ok(param)=> {
+//                             let value = Member::new(key.into(), );
+//                             list.push(value);
+//                         },
+//                         Err(e) => {
+//                             println!("Fail to insert values to table! Should not happen but unit test should catch this!");
+//                         }
+//                     }
+//                     list
+//             });
+//             Value::Struct{ member: Box::new(members) }
+//         }
+//     }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::xmlfmt::response::{MethodResponse, tests::*};
     use crate::xmlfmt::Params;
+    use crate::xmlfmt::response::{MethodResponse, tests::*};
 
     pub fn ser_and_de(value: Value) {
-        let params = Params::new( vec![value] );
+        let params = Params::new(vec![value]);
         ser_and_de_response_value(MethodResponse::Params(params));
     }
 
@@ -500,10 +502,12 @@ mod tests {
     fn writes_struct_xml_value() {
         let data = vec![
             Member::new("foo".to_owned(), Value::Int(42)),
-            Member::new("bar".to_owned(), Value::String("baz".into()))
+            Member::new("bar".to_owned(), Value::String("baz".into())),
         ];
-        
-        let value = Value::Struct { member: Box::new(data) };
+
+        let value = Value::Struct {
+            member: Box::new(data),
+        };
         ser_and_de(value);
     }
 }
