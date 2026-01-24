@@ -21,7 +21,7 @@ use tiny_http::{Request, Response, Server as TinyHttpServer};
 
 // I need to provide a response back. - See if we can do this without async/mutex
 // TODO: Do we need send + Sync? Is async ideal? Thread safe? Mutex?
-type Handler = Box<dyn Fn(Params) -> XmlResponse>;
+type Handler = fn(Params) -> XmlResponse;
 type HandlerMap = HashMap<String, Handler>;
 
 /// Iterator to the list of headers in a request.
@@ -323,19 +323,6 @@ impl Server {
     }
 
     pub fn register(&mut self, name: String, handler: Handler) {
-        // the move closure receives a MethodCall and parse into Params.
-        // The params contains data from the caller, that can be used in the arguments below.
-        // self.register_value(name, move |req| {
-        //     // let result = match from_params(params) {
-        //     //     Ok(v) => v,
-        //     //     Err(err) => return decode_fail(&err),
-        //     // };
-        //     let call = Call::new(name, req);
-        //     let response = self.handle(call);
-        //     self.handlers.insert(k, v)
-        //     // handler(params)?;
-        //     into_params(&response).or_else(|v| encode_fail(&v))
-        // });
         self.handlers.insert(name, handler);
     }
 
