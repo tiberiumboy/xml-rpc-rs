@@ -11,7 +11,7 @@ use serde_xml_rs::to_string;
     <?xml version="1.0"?>
     <methodCall>
         <methodName>{name}</methodName>
-        <params>{params}</params>
+        <params>{params}</params> | could also be <params />
     </methodCall>
 */
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
@@ -34,9 +34,9 @@ impl Call {
     }
 
     #[allow(dead_code)]
-    pub fn from_xml(str: &str) -> XmlResult<Call> {
+    pub fn from_xml(data: &str) -> XmlResult<Call> {
         // strip away <?xml keyword, or prefix/suffix content
-        let result = serde_xml_rs::from_str::<Call>(&str).map_err(|e|
+        let result = serde_xml_rs::from_str::<Call>(&data).map_err(|e|
                 // FEATURE: Fault code is application specific, consider making new enum for our own fault codes
                 XmlError::Format(FmtError::Decoding(e.to_string())));
         result
@@ -60,6 +60,7 @@ mod tests {
             "Fail to serialize Call to XML: {}",
             data.unwrap_err()
         );
+        println!("{:?}", &data);
         let result = Call::from_xml(&data.unwrap());
         assert!(
             result.is_ok(),
@@ -83,9 +84,6 @@ mod tests {
 
     #[test]
     fn reads_and_writes_empty_call() {
-        ser_and_de_call_value(Call {
-            name: Default::default(),
-            params: Default::default(),
-        })
+        ser_and_de_call_value(Call::new(String::new(), Default::default()));
     }
 }
