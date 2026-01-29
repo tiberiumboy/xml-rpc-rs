@@ -11,7 +11,7 @@ use serde_xml_rs::to_string;
     <?xml version="1.0"?>
     <methodCall>
         <methodName>{name}</methodName>
-        <params>{params}</params>
+        <params>{params}</params> | could also be <params />
     </methodCall>
 */
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
@@ -60,6 +60,7 @@ mod tests {
             "Fail to serialize Call to XML: {}",
             data.unwrap_err()
         );
+        println!("{:?}", &data);
         let result = Call::from_xml(&data.unwrap());
         assert!(
             result.is_ok(),

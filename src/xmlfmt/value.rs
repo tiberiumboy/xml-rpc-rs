@@ -26,7 +26,7 @@ pub enum Value {
 
 // This is considered as a "DataType"
 impl Value {
-    pub fn unexpected(&self) -> Unexpected {
+    pub fn unexpected(&self) -> Unexpected<'_> {
         match *self {
             Value::I4(v) => Unexpected::Signed(i64::from(v)),
             Value::Int(v) => Unexpected::Signed(i64::from(v)),
