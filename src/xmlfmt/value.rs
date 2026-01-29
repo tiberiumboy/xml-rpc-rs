@@ -7,17 +7,27 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 pub enum Value {
     I4(i32), // What's the difference between this and the latter? According to XmlValue, there's a distinguish between two?
+    // officially declared in docs as A signed, 32-bit integer.
     Int(i32),
     Bool(bool),
+
+    // ASCII string, may contain NULL bytes, supports Unicode. 
     String(String),
+    
+    // Double precision floating point number.
     Double(f64),
+    
+    #[deprecated = "XML-RPC forbids use of timezones, use another method instead."]
     #[serde(rename = "dateTime.iso8601")]
-    // TODO: See if we can store DateTime true value instead of string, see if the serde_xml_rs parser parse it correctly?
     DateTime(String), // TODO: figure out how to parse this into ISO 8601 format and back
+    
+    // Raw binary data of any length; encoded using Base64 on the wire. 
     Base64(Vec<u8>),
-    // Using box pointer to avoid infinite recursive loop of Array -> Data -> value -> Array...
+    
+    // An one-dimensional array of values. Individual values may be of any type.
     Array(Box<Data>),
-    // Using box pointer to avoid infinite recursive loop of Value -> Struct -> Member -> value
+
+    // A collection of key-value pairs. The keys are strings; the values may be of any type.
     Struct {
         member: Box<Vec<Member>>,
     },
