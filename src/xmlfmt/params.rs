@@ -4,14 +4,15 @@ use serde::Deserialize;
 pub type Param = Vec<Value>;
 
 // Params is a list of param, containing value - only ever used in methodResponse and methodCall
+#[serde_with::skip_serializing_none]
 #[derive(Default, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Params {
-    param: Param,
+    param: Option<Param>,
 }
 
 impl Params {
     pub fn new(param: Param) -> Self {
-        Self { param }
+        Self { param: Some(param) }
     }
 
     //     pub fn from_params<'a, T: Deserialize<'a>>(self) -> XmlResult<T> {
@@ -28,18 +29,21 @@ impl Params {
 
 // params are used as a
 impl Into<Value> for Params {
-    fn into(mut self) -> Value {
-        match self.param.len() {
-            0 => Value::Nil,
-            1 => self.param.pop().unwrap(),
-            _ => Value::Array(Box::new(Data::new(self.param))),
+    fn into(self) -> Value {
+        match self.param {
+            Some(mut param) => match param.len(){
+                0 => Value::Nil,
+                1 => param.pop().unwrap(),
+                _ => Value::Array(Box::new(Data::new(param))),
+            },
+            None => Value::Nil
         }
     }
 }
 
 impl Into<Param> for Params {
     fn into(self) -> Param {
-        self.param
+        self.param.unwrap_or_default()
     }
 }
 
