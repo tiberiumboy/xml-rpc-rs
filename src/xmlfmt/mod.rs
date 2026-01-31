@@ -1,13 +1,10 @@
 use std::result::Result;
 
-pub mod errors; // rust errors (local)
-pub mod params; // method response/call
-// DO not use parser - read the codeblock section near xmlvalue impl. @L94
-// pub mod parse;
 mod call;
 mod data;
+pub mod errors; // rust errors (local)
 mod member;
-mod parse;
+pub mod params; // method response/call
 mod response;
 pub mod value; // value type
 

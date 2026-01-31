@@ -106,27 +106,6 @@ impl Request {
         })
     }
 
-    /// Returns `true` if the request uses HTTPS, and `false` if it uses HTTP.
-    #[inline]
-    pub fn is_secure(&self) -> bool {
-        self.https
-    }
-
-    /// Returns the method of the request (`GET`, `POST`, etc.).
-    #[inline]
-    pub fn method(&self) -> &str {
-        &self.method
-    }
-
-    /// Returns the raw URL requested by the client. It is not decoded and thus can contain strings
-    /// such as `%20`, and the query parameters such as `?p=hello`.
-    ///
-    /// See also `url()`.
-    #[inline]
-    pub fn raw_url(&self) -> &str {
-        &self.url
-    }
-
     /// Returns the raw query string requested by the client. In other words, everything after the
     /// first `?` in the raw url.
     ///
