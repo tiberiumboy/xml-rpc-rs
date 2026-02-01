@@ -1,3 +1,4 @@
+use crate::Params;
 use crate::xmlfmt::{Data, Member, Param};
 use serde::de::Unexpected;
 use serde::{Deserialize, Serialize};
@@ -75,6 +76,18 @@ impl Value {
         Value::Struct {
             member: Box::new(members),
         }
+    }
+}
+
+impl Into<Param> for Value {
+    fn into(self) -> Param {
+        vec![self]
+    }
+}
+
+impl Into<Params> for Value {
+    fn into(self) -> Params {
+        Params::new(self.into())
     }
 }
 
