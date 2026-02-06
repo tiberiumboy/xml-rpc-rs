@@ -1,16 +1,5 @@
 use crate::xmlfmt::ToXml;
-use crate::xmlfmt::{
-    Call,
-    MethodResponse,
-    Params,
-    Value,
-    XmlError,
-    XmlResponse,
-    XmlResult,
-    // de,FmtError, into_params, on_decode_fail, on_encode_fail, ser,
-};
-// use serde::{Deserialize, Serialize};
-// use ureq::http::response;
+use crate::xmlfmt::{Call, MethodResponse, Params, Value, XmlError, XmlResponse, XmlResult};
 use std::collections::HashMap;
 use std::io::{Read as IoRead, Result as IoResult};
 use std::marker::PhantomData;
@@ -21,7 +10,8 @@ use tiny_http::{Request, Response, Server as TinyHttpServer};
 
 // I need to provide a response back. - See if we can do this without async/mutex
 // TODO: Do we need send + Sync? Is async ideal? Thread safe? Mutex?
-type Handler = fn(Params) -> XmlResponse;
+// I want to use closure, which requires FnMut, but FnMut is a trait not a type.
+type Handler = Box<dyn FnMut(Params) -> XmlResponse>;
 type HandlerMap = HashMap<String, Handler>;
 
 /// Iterator to the list of headers in a request.
@@ -306,7 +296,7 @@ impl Server {
     }
 
     // convert request into Call struct and invoke the method
-    fn handle_outer(&self, request: &mut Request) -> XmlResponse {
+    fn handle_outer(&mut self, request: &mut Request) -> XmlResponse {
         let call = match serde_xml_rs::from_reader(request.as_reader()) {
             Ok(data) => data,
             Err(e) => Err(Value::fault(-1, e.to_string())),
@@ -316,10 +306,11 @@ impl Server {
     }
 
     #[allow(dead_code)]
-    fn poll(&self) {
-        // think there's already a transport we could use?
-        for mut request in self.server.incoming_requests() {
-            let result: XmlResponse = self.handle_outer(&mut request);
+    fn poll(&mut self) {
+        if let Ok(mut request) = self.server.recv() {
+            // }
+            // for mut request in self.server.incoming_requests() {
+            let result = self.handle_outer(&mut request);
 
             let reply = MethodResponse::new(result);
             let content = match reply.to_xml() {
@@ -337,8 +328,8 @@ impl Server {
 
     /// Invoke subscribers matching handler names.
     /// Use this as a way to invoke methods or function on the python side of environment.
-    fn handle(&self, req: Call) -> XmlResponse {
-        match self.handlers.get(&req.name) {
+    fn handle(&mut self, req: Call) -> XmlResponse {
+        match self.handlers.get_mut(&req.name) {
             Some(v) => v(req.params.into()),
             None => Err(Value::fault(
                 -1,

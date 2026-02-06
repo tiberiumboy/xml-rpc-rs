@@ -37,6 +37,7 @@ pub enum Value {
 
 // This is considered as a "DataType"
 impl Value {
+    #![allow(warnings)]
     pub fn unexpected(&self) -> Unexpected<'_> {
         match *self {
             Value::I4(v) => Unexpected::Signed(i64::from(v)),
@@ -45,7 +46,6 @@ impl Value {
             Value::String(ref v) => Unexpected::Str(v),
             Value::Double(v) => Unexpected::Float(v),
             // This is fine, we've deprecated the usage of the method, but this library needs to handle it gracefully.
-            // FIXME: How can I suppress this lint warning?
             Value::DateTime(_) => Unexpected::Other("dateTime.iso8601"),
             Value::Base64(ref v) => Unexpected::Bytes(v),
             Value::Array(_) => Unexpected::Seq,
