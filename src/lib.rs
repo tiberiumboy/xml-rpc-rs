@@ -9,4 +9,4 @@ pub mod xmlfmt;
 
 pub use client::{Client, call, call_value};
 pub use server::Server;
-pub use xmlfmt::{Params, Value, XmlError, XmlResponse};
+pub use xmlfmt::{MethodResponse, Params, Value, XmlError, XmlResponse};

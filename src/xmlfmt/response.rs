@@ -20,7 +20,7 @@ pub type XmlResponse = Result<Params, Value>; // we need to make sure that value
 // Only used within this crate, as it's meant to be used to receive response from server
 #[derive(PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub(crate) enum MethodResponse {
+pub enum MethodResponse {
     Params(Params),
     Fault(Value),
 }

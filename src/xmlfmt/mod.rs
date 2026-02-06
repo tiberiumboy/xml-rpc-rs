@@ -5,19 +5,18 @@ mod data;
 pub mod errors; // rust errors (local)
 mod member;
 pub mod params; // method response/call
-mod response;
+pub mod response;
 pub mod value; // value type
 
 pub(crate) mod to_xml; // may not be needed?
 
 pub use self::errors::{FmtError, XmlError};
-pub use self::response::XmlResponse;
+pub use self::response::{MethodResponse, XmlResponse};
 pub use crate::xmlfmt::params::{Param, Params};
 pub use crate::xmlfmt::value::Value;
 // scope project only - used for client
 use self::data::Data;
 use self::member::Member;
-pub(crate) use self::response::MethodResponse;
 pub(crate) use self::to_xml::ToXml;
 
 // interface point for making http request

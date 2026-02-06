@@ -8,7 +8,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-ureq = { version = "^3", features = ["json"] }
+ureq = { version = "^3.2", features = ["json"] }
 serde = { version = "^1.0", features = ["derive"] }
 serde_with = "^3"                                   # Library used to resolve empty params collection issue.
 serde-xml-rs = "^0.8"
