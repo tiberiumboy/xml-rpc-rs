@@ -262,7 +262,6 @@ enum Executor {
 
 */
 
-// FIXME: Got lint warning complaining server and on_missing_method not in used.
 pub struct Server {
     server: TinyHttpServer,
     handlers: HandlerMap,

@@ -14,20 +14,8 @@ impl Params {
     pub fn new(param: Param) -> Self {
         Self { param: Some(param) }
     }
-
-    //     pub fn from_params<'a, T: Deserialize<'a>>(self) -> XmlResult<T> {
-    //         // let mut list: Vec<Value> = self.into();
-    //         // let data = match list.len() {
-    //         //     0 => Value::String("".to_owned()),
-    //         //     1 => list.pop().unwrap(),   // TODO we really should handle this gracefully?
-    //         //     _ => Value::Array(Box::new(Data::new(list)))
-    //         // };
-    //         let data: Value = self.into();
-    //         T::deserialize(data)
-    //     }
 }
 
-// params are used as a
 impl Into<Value> for Params {
     fn into(self) -> Value {
         match self.param {
