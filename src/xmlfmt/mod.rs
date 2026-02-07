@@ -1,9 +1,9 @@
 use std::result::Result;
 
 mod call;
-mod data;
+pub mod data;
 pub mod errors; // rust errors (local)
-mod member;
+pub mod member;
 pub mod params; // method response/call
 pub mod response;
 pub mod value; // value type
@@ -15,8 +15,7 @@ pub use self::response::{MethodResponse, XmlResponse};
 pub use crate::xmlfmt::params::{Param, Params};
 pub use crate::xmlfmt::value::Value;
 // must be public to support value schema
-pub use self::data::Data;
-pub use self::member::Member;
+pub use crate::xmlfmt::{data::Data,member::Member};
 pub(crate) use self::to_xml::ToXml;
 
 // interface point for making http request
