@@ -14,9 +14,9 @@ pub use self::errors::{FmtError, XmlError};
 pub use self::response::{MethodResponse, XmlResponse};
 pub use crate::xmlfmt::params::{Param, Params};
 pub use crate::xmlfmt::value::Value;
-// scope project only - used for client
-use self::data::Data;
-use self::member::Member;
+// must be public to support value schema
+pub use self::data::Data;
+pub use self::member::Member;
 pub(crate) use self::to_xml::ToXml;
 
 // interface point for making http request

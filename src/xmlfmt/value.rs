@@ -8,8 +8,11 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 pub enum Value {
     I4(i32), // What's the difference between this and the latter? According to XmlValue, there's a distinguish between two?
+    
     // officially declared in docs as A signed, 32-bit integer.
     Int(i32),
+    
+    // self explanatory
     Bool(bool),
 
     // ASCII string, may contain NULL bytes, supports Unicode.
@@ -32,7 +35,9 @@ pub enum Value {
     Struct {
         member: Box<Vec<Member>>,
     },
-    Nil, // translate this into <nil/>
+
+    // translate this into <nil/>
+    Nil,
 }
 
 // This is considered as a "DataType"
@@ -97,7 +102,7 @@ mod tests {
     use crate::xmlfmt::Params;
     use crate::xmlfmt::response::{MethodResponse, tests::*};
 
-    pub fn ser_and_de(value: Value) {
+    fn ser_and_de(value: Value) {
         let params = Params::new(vec![value]);
         ser_and_de_response_value(MethodResponse::Params(params));
     }
