@@ -11,7 +11,7 @@ use tiny_http::{Request, Response, Server as TinyHttpServer};
 // I need to provide a response back. - See if we can do this without async/mutex
 // TODO: Do we need send + Sync? Is async ideal? Thread safe? Mutex?
 // I want to use closure, which requires FnMut, but FnMut is a trait not a type.
-type Handler = Box<dyn FnMut(Params) -> XmlResponse>;
+pub type Handler = Box<dyn FnMut(Params) -> XmlResponse + Send + Sync>;
 type HandlerMap = HashMap<String, Handler>;
 
 /// Iterator to the list of headers in a request.
@@ -305,13 +305,9 @@ impl Server {
     }
 
     #[allow(dead_code)]
-    fn poll(&mut self) {
+    pub fn poll(&mut self) {
         if let Ok(mut request) = self.server.recv() {
-            // }
-            // for mut request in self.server.incoming_requests() {
-            let result = self.handle_outer(&mut request);
-
-            let reply = MethodResponse::new(result);
+            let reply: MethodResponse = self.handle_outer(&mut request).into();
             let content = match reply.to_xml() {
                 Ok(str) => str,
                 Err(val) => val.to_string(),
