@@ -12,9 +12,7 @@ use serde::{Deserialize, Serialize};
         </data>
     </array>
 */
-#[derive(Serialize, Deserialize, PartialEq, Clone)]
-// #[cfg!(Debug)]
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Data {
     value: Param,
